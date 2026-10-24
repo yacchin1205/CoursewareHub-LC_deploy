@@ -1,6 +1,7 @@
 FROM docker:27.5.1-dind
 
-RUN apk add --no-cache openssh python3 sudo \
+RUN apk upgrade --no-cache --available \
+    && apk add --no-cache openssh python3 sudo \
     && adduser -D -s /bin/sh centos \
     && passwd -d centos \
     && echo 'centos ALL=(ALL) NOPASSWD: ALL' > /etc/sudoers.d/centos \
