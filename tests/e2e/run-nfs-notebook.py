@@ -6,6 +6,7 @@ import os
 import secrets
 import shlex
 from pathlib import Path
+from urllib.parse import urlparse
 import subprocess
 import time
 import urllib.request
@@ -15,6 +16,7 @@ import yaml
 from coursewarehub_ui import check_coursewarehub
 from lti_platform import running_platform, check_lti
 from registry_fixture import running_registry, running_build_repository
+from saml_provider import running_provider, check_saml
 
 
 def command(args):
@@ -33,7 +35,7 @@ def main():
     parser.add_argument("--worker-ip", required=True)
     parser.add_argument("--worker-container", required=True)
     parser.add_argument("--manager-container", required=True)
-    parser.add_argument("--case", choices=["legacy-2024", "current-registry"], default="legacy-2024")
+    parser.add_argument("--case", choices=["legacy-2024", "current-registry", "federation"], default="legacy-2024")
     parser.add_argument("--network", required=True)
     args = parser.parse_args()
     with ExitStack() as fixtures:
@@ -46,6 +48,16 @@ def run_case(args, fixtures):
     work = results / "workspace"
     work.mkdir(parents=True, exist_ok=True)
     platform_tag = "master" if args.case == "current-registry" else "2024.03"
+    gateway = command(["docker", "inspect", "--format",
+                       "{{range .NetworkSettings.Networks}}{{.Gateway}}{{end}}",
+                       args.manager_container]).strip()
+    email = "ciadmin@example.test"
+    saml = None
+    saml_metadata = None
+    if args.case == "federation":
+        saml = fixtures.enter_context(running_provider("http://" + gateway + ":18501", "https://coursewarehub.test", email))
+        saml_metadata = results / "idp-metadata.xml"
+        saml_metadata.write_bytes(saml.metadata())
     group = "ci_nfs"
     master, worker = args.manager_ip, args.worker_ip
     key = str(args.key.resolve())
@@ -85,6 +97,9 @@ def run_case(args, fixtures):
         master_server=master, master_fqdn="coursewarehub.test",
         servicenet_ips={master: master, worker: worker},
         ansible_ssh_user="centos", ansible_ssh_private_key_file=key,
+        enable_federation=saml is not None,
+        cg_groups=[saml.authorized_group] if saml else [],
+        cg_fqdn=urlparse(saml.base_url).netloc if saml else None,
         auth_proxy_image="niicloudoperation/coursewarehub-auth-proxy:" + platform_tag,
         jupyterhub_image="niicloudoperation/coursewarehub-jupyterhub:" + platform_tag))
     execute("D03_NFSの準備.ipynb", dict(
@@ -187,19 +202,16 @@ def run_case(args, fixtures):
                     input=f"\n{master} coursewarehub.test\n", text=True, check=True)
     os.environ["CWH_TEST_DB_PASSWORD"] = secrets.token_hex(24)
     os.environ["CWH_TEST_ADMIN_PASSWORD"] = secrets.token_hex(24)
-    gateway = command(["docker", "inspect", "--format",
-                       "{{range .NetworkSettings.Networks}}{{.Gateway}}{{end}}",
-                       args.manager_container]).strip()
     build_repository = None
     if registry:
         registry.seed(args.manager_container, args.worker_container, "niicloudoperation/notebook")
         build_repository = fixtures.enter_context(running_build_repository(gateway, registry))
-    email = "ciadmin@example.test"
     with running_platform("http://" + gateway + ":18500", "https://coursewarehub.test", email) as platform:
         execute("D05_CoursewareHubの準備.ipynb", dict(
             hosts_file=str(inventory), target_group=group,
             db_password_env="CWH_TEST_DB_PASSWORD", admin_password_env="CWH_TEST_ADMIN_PASSWORD",
             teacher_email=email, intermediate_certfile="",
+            cgidp_metadata=str(saml_metadata) if saml_metadata else None,
             generate_self_signed_cert=True, check_mode_first=False, configure_selinux=False,
             legacy_singleuser_profile=registry is None, lti_config=platform.registration,
             registry_host=registry.host if registry else "",
@@ -217,6 +229,8 @@ def run_case(args, fixtures):
                             os.environ["CWH_TEST_ADMIN_PASSWORD"], args.manager_container,
                             args.worker_container, build_repository=build_repository)
         check_lti(results / "lti", platform, username)
+        if saml:
+            check_saml(results / "saml", saml, username, args.manager_container)
         execute("O01_CoursewareHubの更新.ipynb", dict(
             hosts_file=str(inventory), target_group=group,
             db_password_env="CWH_TEST_DB_PASSWORD", intermediate_certfile="",
@@ -226,6 +240,8 @@ def run_case(args, fixtures):
                             args.manager_container, args.worker_container, expected_existing=True,
                             build_repository=build_repository)
         check_lti(results / "after-update" / "lti", platform, username)
+        if saml:
+            check_saml(results / "after-update" / "saml", saml, username, args.manager_container)
 
 
 if __name__ == "__main__":

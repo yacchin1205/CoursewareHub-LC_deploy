@@ -46,7 +46,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        platform: [legacy-2024, current-registry]
+        platform: [legacy-2024, current-registry, federation]
     env:
       CWH_E2E_PLATFORM: ${{ matrix.platform }}
     if: github.repository == 'yacchin1205/CoursewareHub-LC_deploy'
