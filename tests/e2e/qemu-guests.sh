@@ -43,7 +43,7 @@ EOF
     IFS=: read -r node address memory disk <<< "$spec"
     [[ "$node" =~ ^[a-z][a-z0-9-]*$ ]] || { echo "Invalid guest name"; return 1; }
     mac=$(printf '52:54:00:77:00:%02x' "$((16 + ${#qemu_names[@]}))")
-    tap="cwh-$node"
+    tap="cwh-vm${#qemu_names[@]}"
     qemu_names+=("$node")
     qemu_addresses+=("$address")
     qemu_taps+=("$tap")
