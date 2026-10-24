@@ -1,5 +1,6 @@
 """Build CoursewareHub with the construction notebooks and test its running service."""
 import argparse
+from contextlib import ExitStack
 import json
 import os
 import secrets
@@ -13,6 +14,7 @@ import papermill as pm
 import yaml
 from coursewarehub_ui import check_coursewarehub
 from lti_platform import running_platform, check_lti
+from registry_fixture import running_registry, running_build_repository
 
 
 def command(args):
@@ -31,11 +33,19 @@ def main():
     parser.add_argument("--worker-ip", required=True)
     parser.add_argument("--worker-container", required=True)
     parser.add_argument("--manager-container", required=True)
+    parser.add_argument("--case", choices=["legacy-2024", "current-registry"], default="legacy-2024")
+    parser.add_argument("--network", required=True)
     args = parser.parse_args()
+    with ExitStack() as fixtures:
+        run_case(args, fixtures)
+
+
+def run_case(args, fixtures):
     repo = Path(__file__).resolve().parents[2]
     results = args.result_dir.resolve()
     work = results / "workspace"
     work.mkdir(parents=True, exist_ok=True)
+    platform_tag = "master" if args.case == "current-registry" else "2024.03"
     group = "ci_nfs"
     master, worker = args.manager_ip, args.worker_ip
     key = str(args.key.resolve())
@@ -75,8 +85,8 @@ def main():
         master_server=master, master_fqdn="coursewarehub.test",
         servicenet_ips={master: master, worker: worker},
         ansible_ssh_user="centos", ansible_ssh_private_key_file=key,
-        auth_proxy_image="niicloudoperation/coursewarehub-auth-proxy:2024.03",
-        jupyterhub_image="niicloudoperation/coursewarehub-jupyterhub:2024.03"))
+        auth_proxy_image="niicloudoperation/coursewarehub-auth-proxy:" + platform_tag,
+        jupyterhub_image="niicloudoperation/coursewarehub-jupyterhub:" + platform_tag))
     execute("D03_NFSの準備.ipynb", dict(
         hosts_file=str(inventory), target_group=group,
         deploy_repo_ref="db991a98e6c321a2643b8ded9d4c2b6e8987459f",
@@ -115,9 +125,14 @@ def main():
     remote(master, "grep -qx worker-write-ok /exchange/ci-worker-write")
     # D04 performs package installation, systemd configuration and Swarm creation.
     # The harness only checks the result and deploys a disposable test workload.
+    registry = None
+    if args.case == "current-registry":
+        registry = fixtures.enter_context(running_registry(args.network, results))
+        os.environ["CWH_TEST_REGISTRY_PASSWORD"] = registry.password
     execute("D04_Docker Swarmの準備.ipynb", dict(
         hosts_file=str(inventory), target_group=group + "_nodes",
         docker_packages=["docker-ce-27.5.1", "docker-ce-cli-27.5.1", "containerd.io"],
+        docker_opts={"data-root": "/var/lib/docker", "insecure-registries": [registry.host]} if registry else None,
         compose_version="2.39.4", network_prerequisites_confirmed=True,
         hosts_unsafe_writes=True))
     for attempt in range(30):
@@ -175,6 +190,10 @@ def main():
     gateway = command(["docker", "inspect", "--format",
                        "{{range .NetworkSettings.Networks}}{{.Gateway}}{{end}}",
                        args.manager_container]).strip()
+    build_repository = None
+    if registry:
+        registry.seed(args.manager_container, args.worker_container, "niicloudoperation/notebook")
+        build_repository = fixtures.enter_context(running_build_repository(gateway, registry))
     email = "ciadmin@example.test"
     with running_platform("http://" + gateway + ":18500", "https://coursewarehub.test", email) as platform:
         execute("D05_CoursewareHubの準備.ipynb", dict(
@@ -182,17 +201,21 @@ def main():
             db_password_env="CWH_TEST_DB_PASSWORD", admin_password_env="CWH_TEST_ADMIN_PASSWORD",
             teacher_email=email, intermediate_certfile="",
             generate_self_signed_cert=True, check_mode_first=False, configure_selinux=False,
-            legacy_singleuser_profile=True, lti_config=platform.registration,
+            legacy_singleuser_profile=registry is None, lti_config=platform.registration,
+            registry_host=registry.host if registry else "",
+            registry_password_env="CWH_TEST_REGISTRY_PASSWORD" if registry else None,
+            registry_insecure=registry is not None,
+            singleuser_args=["--NotebookApp.kernel_manager_class=notebook.services.kernels.kernelmanager.AsyncMappingKernelManager"] if registry else [],
             logo_path=str(repo / "coursewarehub/jupyterhub-logo.png"),
             contents_notebook_path=str(repo / "coursewarehub/D06_CoursewareHubコンテンツの配備.ipynb"),
             deploy_repo_ref="db991a98e6c321a2643b8ded9d4c2b6e8987459f",
-            resource_schema_url="https://raw.githubusercontent.com/NII-cloud-operation/CoursewareHub-LC_platform/d08692cfb77cd427dd1fb197d499a26f9d310003/jupyterhub/resources-schema.json"))
+            resource_schema_url="https://raw.githubusercontent.com/NII-cloud-operation/CoursewareHub-LC_platform/" + ("master" if registry else "d08692cfb77cd427dd1fb197d499a26f9d310003") + "/jupyterhub/resources-schema.json"))
         (results / "construction-summary.json").write_text(json.dumps({
             "D01_D05_execution": "passed", "runtime_verification": "pending",
         }, indent=2) + "\n")
         username = check_coursewarehub(results, "https://coursewarehub.test", email,
                             os.environ["CWH_TEST_ADMIN_PASSWORD"], args.manager_container,
-                            args.worker_container)
+                            args.worker_container, build_repository=build_repository)
         check_lti(results / "lti", platform, username)
         execute("O01_CoursewareHubの更新.ipynb", dict(
             hosts_file=str(inventory), target_group=group,
@@ -200,7 +223,8 @@ def main():
             check_mode_first=False))
         check_coursewarehub(results / "after-update", "https://coursewarehub.test",
                             email, os.environ["CWH_TEST_ADMIN_PASSWORD"],
-                            args.manager_container, args.worker_container, expected_existing=True)
+                            args.manager_container, args.worker_container, expected_existing=True,
+                            build_repository=build_repository)
         check_lti(results / "after-update" / "lti", platform, username)
 
 

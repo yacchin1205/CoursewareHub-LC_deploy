@@ -100,4 +100,5 @@ manager_ip=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}
 worker_ip=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "$worker")
 python tests/e2e/run-nfs-notebook.py --result-dir "$result_dir" \
   --key "$private_dir/id_ed25519" --manager-ip "$manager_ip" --worker-ip "$worker_ip" \
-  --worker-container "$worker" --manager-container "$manager"
+  --worker-container "$worker" --manager-container "$manager" \
+  --network "$network" --case "${CWH_E2E_PLATFORM:-legacy-2024}"

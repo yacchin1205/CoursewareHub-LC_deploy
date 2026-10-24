@@ -43,6 +43,12 @@ jobs:
           retention-days: 7
 
   nfs:
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: [legacy-2024, current-registry]
+    env:
+      CWH_E2E_PLATFORM: ${{ matrix.platform }}
     if: github.repository == 'yacchin1205/CoursewareHub-LC_deploy'
     runs-on: ubuntu-24.04
     timeout-minutes: 60
@@ -69,7 +75,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: nfs-notebook-evidence
+          name: nfs-notebook-evidence-${{ matrix.platform }}
           path: test-results/nfs-notebook/
           if-no-files-found: warn
           retention-days: 7

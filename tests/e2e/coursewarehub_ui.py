@@ -6,9 +6,10 @@ import time
 from urllib.parse import quote
 
 from playwright.sync_api import sync_playwright, expect
+from registry_fixture import build_environment
 
 
-def check_coursewarehub(results, base_url, email, password, manager, worker, *, expected_existing=False):
+def check_coursewarehub(results, base_url, email, password, manager, worker, *, expected_existing=False, build_repository=None):
     results = Path(results)
     results.mkdir(parents=True, exist_ok=True)
     steps = []
@@ -55,10 +56,20 @@ def check_coursewarehub(results, base_url, email, password, manager, worker, *, 
             username = user["name"]
             passed("local administrator logged in through browser")
 
-            spawn_response = page.goto(base_url + "/hub/spawn", wait_until="domcontentloaded")
-            if spawn_response is not None:
-                assert spawn_response.status < 400, page.locator("body").inner_text()
-            page.wait_for_url("**/user/" + username + "/**", timeout=300000)
+            if build_repository and not expected_existing:
+                build_environment(page, base_url, build_repository, results, manager)
+                passed("repo2docker built an image from local Git and published it to the authenticated registry")
+
+            def spawn():
+                response = page.goto(base_url + "/hub/spawn", wait_until="domcontentloaded")
+                if response is not None:
+                    assert response.status < 400, page.locator("body").inner_text()
+                if build_repository and page.locator('input[name="image"]').count():
+                    page.locator('input[name="image"][value="' + build_repository["image"] + '"]').check()
+                    page.locator('input[type="submit"], button[type="submit"]').click()
+                page.wait_for_url("**/user/" + username + "/**", timeout=300000)
+
+            spawn()
             page.wait_for_function("window.Jupyter && Jupyter.notebook_list", timeout=120000)
             page.screenshot(path=str(results / "user-server.png"), full_page=True)
             passed("user Notebook server started and tree UI rendered")
@@ -98,8 +109,13 @@ def check_coursewarehub(results, base_url, email, password, manager, worker, *, 
                       f'assert os.getuid() == {expected_uid}, os.getuid()\n'
                       'Path("e2e-persist.txt").write_text("persistent-user-data")\n'
                       'print("E2E_RESULT", 6 * 7)')
+            if build_repository:
+                source += '\nassert Path("/etc/cwh-e2e-built").read_text().strip() == "built-by-repo2docker"\nprint("E2E_BUILT_IMAGE")'
             page.evaluate("source => { const c = Jupyter.notebook.get_cell(0); c.set_text(source); c.execute(); }", source)
             expect(page.locator(".output_area")).to_contain_text("E2E_RESULT 42", timeout=120000)
+            if build_repository:
+                expect(page.locator(".output_area")).to_contain_text("E2E_BUILT_IMAGE", timeout=120000)
+                passed("the user kernel ran inside the repo2docker-built image")
             page.evaluate("() => Jupyter.notebook.save_notebook()")
             saved = user_fetch(user_prefix + "api/contents/e2e-runtime.ipynb")
             assert "E2E_RESULT" in str(saved["content"]["cells"][0]["source"]), saved
@@ -151,8 +167,7 @@ def check_coursewarehub(results, base_url, email, password, manager, worker, *, 
             page.goto(base_url + "/hub/home")
             page.locator("#stop").click()
             expect(page.locator("#start")).to_be_visible(timeout=120000)
-            page.goto(base_url + "/hub/spawn")
-            page.wait_for_url("**/user/" + username + "/**", timeout=300000)
+            spawn()
             page.wait_for_function("window.Jupyter && Jupyter.notebook_list", timeout=120000)
             persisted = user_fetch(user_prefix + "api/contents/e2e-persist.txt")
             assert persisted["content"] == "persistent-user-data", persisted
