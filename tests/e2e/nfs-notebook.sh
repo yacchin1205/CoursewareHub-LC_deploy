@@ -67,6 +67,8 @@ Host *
   IdentityFile $private_dir/id_ed25519
   IdentitiesOnly yes
   ConnectTimeout 5
+  ServerAliveInterval 5
+  ServerAliveCountMax 2
   ControlMaster auto
   ControlPersist 60s
   ControlPath $private_dir/ssh-%C

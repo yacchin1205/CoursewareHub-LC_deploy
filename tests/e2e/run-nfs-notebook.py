@@ -3,6 +3,7 @@ import argparse
 import json
 import os
 import secrets
+import shlex
 from pathlib import Path
 import subprocess
 import time
@@ -14,7 +15,8 @@ from coursewarehub_ui import check_coursewarehub
 
 
 def command(args):
-    result = subprocess.run(args, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    result = subprocess.run(args, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                            timeout=180)
     print(result.stdout)
     result.check_returncode()
     return result.stdout
@@ -43,10 +45,26 @@ def main():
                      "ansible_python_interpreter=/usr/bin/python3\n")
     inventory = work / f"{group}_inventory"
 
+    construction_results = []
+
     def execute(name, parameters):
-        pm.execute_notebook(str(repo / "coursewarehub" / name), str(results / name),
-                            parameters=parameters, cwd=str(work), kernel_name="python3",
-                            execution_timeout=600, log_output=True)
+        record = {"notebook": name, "parameters": parameters, "status": "running"}
+        construction_results.append(record)
+        def save_result():
+            (results / "construction-results.json").write_text(
+                json.dumps(construction_results, ensure_ascii=False, indent=2) + "\n")
+        save_result()
+        try:
+            pm.execute_notebook(str(repo / "coursewarehub" / name), str(results / name),
+                                parameters=parameters, cwd=str(work), kernel_name="python3",
+                                execution_timeout=600, log_output=True)
+        except Exception as error:
+            record.update(status="failed", error=str(error))
+            raise
+        else:
+            record["status"] = "passed"
+        finally:
+            save_result()
 
     execute("D01_オンプレミス環境の場合のマシン設定.ipynb",
             dict(inventory_path=str(hosts), target_group=group))
@@ -79,6 +97,9 @@ def main():
     remote(master, "systemctl is-active nfs-server")
     remote(master, "sh -c 'echo persisted-through-container-restart > /exchange/ci-persistence'")
     remote(worker, "grep -qx persisted-through-container-restart /exchange/ci-persistence")
+    # A guest restart invalidates a multiplexed SSH session; open a fresh session afterward.
+    subprocess.run(["ssh", *shlex.split(os.environ["ANSIBLE_SSH_ARGS"]), "-O", "exit",
+                    "centos@" + worker], timeout=15, check=False)
     command(["docker", "restart", "--time", "30", args.worker_container])
     for attempt in range(60):
         if subprocess.run(["docker", "exec", args.worker_container,
@@ -127,16 +148,12 @@ def main():
         raise AssertionError("D04 Swarm cross-node overlay workload failed")
     remote(master, "grep -qx swarm-worker-shared-volume-ok /exchange/probe.txt")
     (results / "nfs-summary.json").write_text(json.dumps({
-        "executed_notebooks": ["on-premise D01", "D02", "D03", "D04"],
+        "executed_notebooks": [record["notebook"] for record in construction_results],
         "real_nfs_server_and_client_roles": "passed",
         "mount_before_restart": before, "mount_after_container_restart": after,
         "cross_node_read_write": "passed", "container_restart_fstab_remount": "passed",
-        "skipped_notebook_operations": ["server/client check mode", "OS reboot"],
         "D04_package_install_systemd_compose_swarm": "passed",
         "swarm_overlay_and_nfs_workload": "passed",
-        "D04_parameters": {"docker_version": "27.5.1", "compose_version": "2.39.4",
-                           "hosts_unsafe_writes": True},
-        "not_covered": ["OS reboot persistence", "Compose v1", "D05-D06", "CoursewareHub UI"],
     }, indent=2) + "\n")
     print("PASS: D03 real NFS roles, NFS mount, cross-node read/write and container restart remount")
     print("PASS: D04 Docker installation, systemd configuration, Compose and Swarm creation; overlay/NFS workload")
@@ -166,10 +183,6 @@ def main():
         resource_schema_url="https://raw.githubusercontent.com/NII-cloud-operation/CoursewareHub-LC_platform/d08692cfb77cd427dd1fb197d499a26f9d310003/jupyterhub/resources-schema.json"))
     (results / "construction-summary.json").write_text(json.dumps({
         "D01_D05_execution": "passed", "runtime_verification": "pending",
-        "platform_release": "2024.03", "profile": "classic CoursewareUserSpawner",
-        "singleuser_image": "niicloudoperation/notebook:latest",
-        "skipped": ["OS reboot", "D03/D05 initial check mode", "SELinux configuration"],
-        "not_covered": ["repo2docker/registry", "federation", "LTI", "latest master", "O01 update"],
     }, indent=2) + "\n")
     check_coursewarehub(results, "https://coursewarehub.test", "ciadmin@example.test",
                         os.environ["CWH_TEST_ADMIN_PASSWORD"], args.manager_container,

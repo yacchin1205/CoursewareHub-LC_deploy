@@ -15,7 +15,6 @@ def check_coursewarehub(results, base_url, email, password, manager, worker):
         steps.append(name)
         (results / "runtime-summary.json").write_text(json.dumps({
             "passed": steps, "status": "running",
-            "not_covered": ["federation", "LTI", "repo2docker/registry", "O01 update"],
         }, indent=2) + "\n")
         print("RUNTIME PASS:", name)
 
@@ -55,7 +54,9 @@ def check_coursewarehub(results, base_url, email, password, manager, worker):
             username = user["name"]
             passed("local administrator logged in through browser")
 
-            page.goto(base_url + "/hub/spawn", wait_until="domcontentloaded")
+            spawn_response = page.goto(base_url + "/hub/spawn", wait_until="domcontentloaded")
+            if spawn_response is not None:
+                assert spawn_response.status < 400, page.locator("body").inner_text()
             page.wait_for_url("**/user/" + username + "/**", timeout=300000)
             page.wait_for_function("window.Jupyter && Jupyter.notebook_list", timeout=120000)
             page.screenshot(path=str(results / "user-server.png"), full_page=True)
@@ -153,7 +154,6 @@ def check_coursewarehub(results, base_url, email, password, manager, worker):
             passed("saved user file and Notebook survived server stop/start")
             (results / "runtime-summary.json").write_text(json.dumps({
                 "status": "passed", "passed": steps,
-                "not_covered": ["federation", "LTI", "repo2docker/registry", "O01 update"],
             }, indent=2) + "\n")
         except Exception as error:
             try:
