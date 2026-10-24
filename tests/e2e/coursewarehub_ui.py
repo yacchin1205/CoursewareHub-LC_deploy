@@ -86,6 +86,16 @@ def check_coursewarehub(results, base_url, email, password, manager, worker, *, 
                     time.sleep(2)
                 else:
                     raise AssertionError("User server did not finish stopping: " + str(model))
+                # Removing a Swarm service finishes before its containers exit.
+                # Old Notebook shutdown can otherwise delete the new runtime file.
+                for attempt in range(60):
+                    if all(not node.output(["docker", "ps", "-q", "--filter",
+                            "label=com.docker.swarm.service.name=jupyter-" + username])
+                           for node in [manager, worker]):
+                        break
+                    time.sleep(2)
+                else:
+                    raise AssertionError("Old user containers did not exit before restart")
                 expect(page.locator("#start")).to_be_visible(timeout=120000)
 
             if build_repository and not expected_existing:
@@ -129,8 +139,7 @@ def check_coursewarehub(results, base_url, email, password, manager, worker, *, 
             assert expected_uid > 0
             source = ('import os\nfrom pathlib import Path\n'
                       f'assert os.getuid() == {expected_uid}, os.getuid()\n'
-                      'Path("e2e-persist.txt").write_text("persistent-user-data")\n'
-                      '')
+                      'Path("e2e-persist.txt").write_text("persistent-user-data")\n')
             if build_repository:
                 source += '\nassert Path("/etc/cwh-e2e-built").read_text().strip() == "built-by-repo2docker"\nprint("E2E_BUILT_IMAGE")'
             source += '\nprint("E2E_RESULT", 6 * 7)'
