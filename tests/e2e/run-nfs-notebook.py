@@ -22,7 +22,8 @@ from saml_provider import running_provider, check_saml
 
 
 def command(args):
-    result = subprocess.run(args, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+    result = subprocess.run(args, text=True, stdin=subprocess.DEVNULL,
+                            stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                             timeout=180)
     print(result.stdout)
     result.check_returncode()

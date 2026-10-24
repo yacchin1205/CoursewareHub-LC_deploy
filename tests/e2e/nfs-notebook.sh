@@ -43,6 +43,11 @@ cleanup() {
       timeout 10s docker exec "$manager" docker service logs "$service_id" > "$result_dir/service-$service_id.log" 2>&1
     done <<< "$service_ids"
   fi
+  if proxy_id=$(timeout 10s docker exec "$manager" docker ps -q --filter label=com.docker.swarm.service.name=coursewarehub_auth-proxy 2>/dev/null); then
+    if [[ "$proxy_id" =~ ^[a-f0-9]{12,64}$ ]]; then
+      timeout 10s docker exec "$manager" docker exec "$proxy_id" cat /var/www/simplesamlphp/log/simplesamlphp.log > "$result_dir/simplesamlphp.log" 2>&1
+    fi
+  fi
   # Stop workloads and detach client mounts while the NFS server is still alive.
   timeout 30s docker exec "$worker" systemctl stop docker.service containerd.service
   timeout 15s docker exec "$worker" umount -lf /jupyter /exchange

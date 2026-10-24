@@ -207,9 +207,13 @@ def check_saml(results, provider, expected_username, manager):
     results.mkdir(parents=True, exist_ok=True)
     certificate = manager.output(['cat', '/etc/jupyterhub/nginx/certs/auth-proxy.chained.cer'])
     tls = ssl.create_default_context(cadata=certificate)
-    with urllib.request.urlopen(provider.tool_url + '/simplesaml/module.php/saml/sp/metadata.php/default-sp',
-                                context=tls, timeout=30) as response:
-        metadata = response.read()
+    try:
+        with urllib.request.urlopen(provider.tool_url + '/simplesaml/module.php/saml/sp/metadata.php/default-sp',
+                                    context=tls, timeout=30) as response:
+            metadata = response.read()
+    except urllib.error.HTTPError as error:
+        (results / 'sp-metadata-error.html').write_bytes(error.read())
+        raise
     (results / 'sp-metadata.xml').write_bytes(metadata)
     entity = parse_xml(metadata)
     assert entity.get('entityID') == provider.sp_entity, entity.get('entityID')
