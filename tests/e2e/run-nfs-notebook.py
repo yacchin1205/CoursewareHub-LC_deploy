@@ -4,8 +4,10 @@ import json
 from pathlib import Path
 import subprocess
 import time
+import urllib.request
 
 import papermill as pm
+import yaml
 
 
 def command(args):
@@ -22,6 +24,7 @@ def main():
     parser.add_argument("--manager-ip", required=True)
     parser.add_argument("--worker-ip", required=True)
     parser.add_argument("--worker-container", required=True)
+    parser.add_argument("--manager-container", required=True)
     args = parser.parse_args()
     repo = Path(__file__).resolve().parents[2]
     results = args.result_dir.resolve()
@@ -83,15 +86,55 @@ def main():
     remote(worker, "grep -qx persisted-through-container-restart /exchange/ci-persistence")
     remote(worker, "sh -c 'echo worker-write-ok > /exchange/ci-worker-write'")
     remote(master, "grep -qx worker-write-ok /exchange/ci-worker-write")
+    # D04 performs package installation, systemd configuration and Swarm creation.
+    # The harness only checks the result and deploys a disposable test workload.
+    execute("D04_Docker Swarmの準備.ipynb", dict(
+        hosts_file=str(inventory), target_group=group + "_nodes",
+        docker_packages=["docker-ce-27.5.1", "docker-ce-cli-27.5.1", "containerd.io"],
+        compose_version="2.39.4", network_prerequisites_confirmed=True,
+        hosts_unsafe_writes=True))
+    for attempt in range(30):
+        nodes = command(["docker", "exec", args.manager_container, "docker", "node", "ls",
+                         "--format", "{{.Status}} {{.Availability}}"])
+        if nodes.strip().splitlines().count("Ready Active") == 2:
+            break
+        time.sleep(2)
+    else:
+        raise AssertionError("D04 did not produce two Ready/Active Swarm nodes")
+    for node in [args.manager_container, args.worker_container]:
+        command(["docker", "exec", node, "docker", "pull", "busybox:1.37.0"])
+    stack = yaml.safe_load((repo / "tests/e2e/swarm-smoke.yml").read_text())
+    stack["services"]["worker-http"]["volumes"] = ["/exchange:/ci-shared"]
+    subprocess.run(["docker", "exec", "-i", args.manager_container, "sh", "-c",
+                    "cat > /tmp/swarm-smoke.yml"], input=yaml.safe_dump(stack), text=True, check=True)
+    command(["docker", "exec", args.manager_container, "docker", "stack", "deploy",
+             "--resolve-image", "never", "-c", "/tmp/swarm-smoke.yml", "smoke"])
+    for attempt in range(90):
+        try:
+            with urllib.request.urlopen("http://127.0.0.1:18081/", timeout=3) as response:
+                content = response.read().decode().strip()
+            if content == "swarm-worker-shared-volume-ok":
+                break
+        except (OSError, ValueError):
+            pass
+        time.sleep(2)
+    else:
+        raise AssertionError("D04 Swarm cross-node overlay workload failed")
+    remote(master, "grep -qx swarm-worker-shared-volume-ok /exchange/probe.txt")
     (results / "nfs-summary.json").write_text(json.dumps({
-        "executed_notebooks": ["on-premise D01", "D02", "D03"],
+        "executed_notebooks": ["on-premise D01", "D02", "D03", "D04"],
         "real_nfs_server_and_client_roles": "passed",
         "mount_before_restart": before, "mount_after_container_restart": after,
         "cross_node_read_write": "passed", "container_restart_fstab_remount": "passed",
         "skipped_notebook_operations": ["server/client check mode", "OS reboot"],
-        "not_covered": ["OS reboot persistence", "D04-D06", "CoursewareHub UI"],
+        "D04_package_install_systemd_compose_swarm": "passed",
+        "swarm_overlay_and_nfs_workload": "passed",
+        "D04_parameters": {"docker_version": "27.5.1", "compose_version": "2.39.4",
+                           "hosts_unsafe_writes": True},
+        "not_covered": ["OS reboot persistence", "Compose v1", "D05-D06", "CoursewareHub UI"],
     }, indent=2) + "\n")
     print("PASS: D03 real NFS roles, NFS mount, cross-node read/write and container restart remount")
+    print("PASS: D04 Docker installation, systemd configuration, Compose and Swarm creation; overlay/NFS workload")
 
 
 if __name__ == "__main__":

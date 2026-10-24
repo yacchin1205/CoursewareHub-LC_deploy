@@ -58,7 +58,7 @@ jobs:
           python -m pip install -r tests/e2e/requirements.txt
           python -m ipykernel install --user --name python3
           ansible-galaxy collection install ansible.posix:2.1.0
-      - name: Run D01-D03 with real systemd and NFS
+      - name: Run D01-D04 with real systemd, NFS and Docker installation
         run: bash tests/e2e/nfs-notebook.sh
       - name: Save NFS experiment evidence
         if: always()

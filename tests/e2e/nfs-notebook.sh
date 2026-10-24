@@ -19,11 +19,17 @@ cleanup() {
     docker exec "$node" systemctl --failed --no-pager > "$result_dir/$node-services.txt" 2>&1
     docker exec "$node" findmnt > "$result_dir/$node-mounts.txt" 2>&1
     docker exec "$node" cat /etc/fstab > "$result_dir/$node-fstab.txt" 2>&1
+    docker exec "$node" docker info > "$result_dir/$node-docker.txt" 2>&1
   done
   docker exec "$manager" exportfs -v > "$result_dir/exports.txt" 2>&1
+  docker exec "$manager" docker node ls > "$result_dir/swarm-nodes.txt" 2>&1
+  docker exec "$manager" docker stack ps smoke --no-trunc > "$result_dir/swarm-tasks.txt" 2>&1
+  docker exec "$manager" docker service logs smoke_gateway > "$result_dir/swarm-gateway.log" 2>&1
+  docker exec "$manager" docker service logs smoke_worker-http > "$result_dir/swarm-worker.log" 2>&1
   docker rm -f "$worker" "$manager"
   docker network rm "$network"
   docker volume rm "$volume"
+  docker volume rm "$manager-docker" "$worker-docker"
   rm -rf "$private_dir"
   printf 'Experiment exit status: %s\n' "$result" > "$result_dir/result.txt"
   exit "$result"
@@ -51,10 +57,11 @@ docker network create "$network"
 docker volume create "$volume"
 for node in "$manager" "$worker"; do
   volumes=()
-  if [[ "$node" == "$manager" ]]; then volumes=(-v "$volume:/exported"); fi
+  if [[ "$node" == "$manager" ]]; then volumes=(-v "$volume:/exported" -p 127.0.0.1:18081:8081); fi
   docker run -d --privileged --cgroupns=private --name "$node" --hostname "$node" \
     --network "$network" --tmpfs /run --tmpfs /tmp \
     -v "$private_dir/id_ed25519.pub:/ci-authorized-key:ro" \
+    -v "$node-docker:/var/lib/docker" \
     "${volumes[@]}" cwh-systemd-node:local
   ready=false
   for attempt in $(seq 1 60); do
@@ -70,4 +77,4 @@ manager_ip=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}
 worker_ip=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "$worker")
 python tests/e2e/run-nfs-notebook.py --result-dir "$result_dir" \
   --key "$private_dir/id_ed25519" --manager-ip "$manager_ip" --worker-ip "$worker_ip" \
-  --worker-container "$worker"
+  --worker-container "$worker" --manager-container "$manager"
