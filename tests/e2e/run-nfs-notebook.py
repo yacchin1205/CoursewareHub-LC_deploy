@@ -73,10 +73,13 @@ def run_case(args, fixtures):
     master, worker = args.manager_ip, args.worker_ip
     key = str(args.key.resolve())
     hosts = work / "hosts"
-    hosts.write_text(f"[{group}]\n{master} public_ip={master}\n{worker}\n\n"
-                     f"[{group}:vars]\nansible_ssh_user=centos\n"
-                     f"ansible_ssh_private_key_file={key}\n"
-                     "ansible_python_interpreter=/usr/bin/python3\n")
+    if getattr(args, 'initial_hosts', None):
+        hosts.write_text(args.initial_hosts)
+    else:
+        hosts.write_text(f"[{group}]\n{master} public_ip={master}\n{worker}\n\n"
+                         f"[{group}:vars]\nansible_ssh_user=centos\n"
+                         f"ansible_ssh_private_key_file={key}\n"
+                         "ansible_python_interpreter=/usr/bin/python3\n")
     inventory = work / f"{group}_inventory"
 
     construction_results = []
@@ -100,8 +103,9 @@ def run_case(args, fixtures):
         finally:
             save_result()
 
-    execute("D01_オンプレミス環境の場合のマシン設定.ipynb",
-            dict(inventory_path=str(hosts), target_group=group))
+    if not getattr(args, 'initial_hosts', None):
+        execute("D01_オンプレミス環境の場合のマシン設定.ipynb",
+                dict(inventory_path=str(hosts), target_group=group))
     execute("D02_CoursewareHubインベントリの準備.ipynb", dict(
         hosts_file=str(hosts), target_group=group, hubname=group,
         group_vars_dir=str(work / "group_vars"), nfs_server=master,
