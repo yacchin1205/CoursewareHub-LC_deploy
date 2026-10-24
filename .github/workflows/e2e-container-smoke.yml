@@ -1,0 +1,33 @@
+name: Container Swarm feasibility
+
+on:
+  push:
+    branches: [feature/e2e-test]
+    paths:
+      - '.github/workflows/e2e-container-smoke.yml'
+      - 'tests/e2e/**'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: container-smoke-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  swarm:
+    if: github.repository == 'yacchin1205/CoursewareHub-LC_deploy'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run two-node container experiment
+        run: bash tests/e2e/container-smoke.sh
+      - name: Save experiment evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: container-swarm-evidence
+          path: test-results/container-smoke/
+          if-no-files-found: warn
+          retention-days: 7
