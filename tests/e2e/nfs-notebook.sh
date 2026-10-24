@@ -30,7 +30,17 @@ cleanup() {
   for service in auth-proxy jupyterhub postgres; do
     docker exec "$manager" docker service logs "coursewarehub_$service" > "$result_dir/coursewarehub-$service.log" 2>&1
   done
-  docker rm -f "$worker" "$manager"
+  for service_id in $(docker exec "$manager" docker service ls -q 2>/dev/null); do
+    timeout 10s docker exec "$manager" docker service ps "$service_id" --no-trunc > "$result_dir/service-$service_id-tasks.txt" 2>&1
+    timeout 10s docker exec "$manager" docker service logs "$service_id" > "$result_dir/service-$service_id.log" 2>&1
+  done
+  # Stop workloads and detach client mounts while the NFS server is still alive.
+  timeout 30s docker exec "$worker" systemctl stop docker.service containerd.service
+  timeout 15s docker exec "$worker" umount -lf /jupyter /exchange
+  timeout 30s docker stop -t 15 "$worker"
+  timeout 15s docker rm -f "$worker"
+  timeout 30s docker stop -t 15 "$manager"
+  timeout 15s docker rm -f "$manager"
   docker network rm "$network"
   docker volume rm "$volume"
   docker volume rm "$manager-docker" "$worker-docker"

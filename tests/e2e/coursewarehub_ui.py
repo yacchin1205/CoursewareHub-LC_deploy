@@ -41,10 +41,16 @@ def check_coursewarehub(results, base_url, email, password, manager, worker):
             page.locator('input[name="email"]').fill(email)
             page.locator('input[name="password"]').fill(password)
             page.locator('input[type="submit"], button[type="submit"]').click()
-            page.wait_for_url("**/hub/**", timeout=120000)
-            user_response = page.request.get(base_url + "/hub/api/user")
-            assert user_response.ok, user_response.text()
-            user = user_response.json()
+            page.wait_for_function("location.pathname.startsWith('/hub/') || location.pathname.startsWith('/user/')", timeout=120000)
+            user_response = page.evaluate("""async () => {
+                const token = document.cookie.match(/(?:^|; )_xsrf=([^;]*)/);
+                const response = await fetch('/hub/api/user', {headers: {
+                    'X-XSRFToken': token ? decodeURIComponent(token[1]) : ''
+                }});
+                return {status: response.status, text: await response.text()};
+            }""")
+            assert user_response["status"] == 200, user_response
+            user = json.loads(user_response["text"])
             assert user.get("admin") is True, user
             username = user["name"]
             passed("local administrator logged in through browser")
@@ -146,6 +152,13 @@ def check_coursewarehub(results, base_url, email, password, manager, worker):
                 "not_covered": ["federation", "LTI", "repo2docker/registry", "O01 update"],
             }, indent=2) + "\n")
         except Exception as error:
+            try:
+                current_notebook = page.evaluate("() => window.Jupyter && Jupyter.notebook ? Jupyter.notebook.toJSON() : null")
+                if current_notebook:
+                    (results / "runtime-notebook-at-failure.ipynb").write_text(
+                        json.dumps(current_notebook, ensure_ascii=False, indent=1) + "\n")
+            except Exception:
+                pass
             page.screenshot(path=str(results / "runtime-failure.png"), full_page=True)
             (results / "runtime-failure.html").write_text(page.content())
             (results / "runtime-summary.json").write_text(json.dumps({
