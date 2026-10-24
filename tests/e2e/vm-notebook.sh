@@ -14,6 +14,7 @@ cleanup() {
   result=$?
   trap - EXIT
   set +e
+  qemu_host_diagnostics
   for node in master worker; do
     address=$manager_ip
     [[ "$node" == worker ]] && address=$worker_ip

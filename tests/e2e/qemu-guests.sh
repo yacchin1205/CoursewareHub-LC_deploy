@@ -83,7 +83,7 @@ ethernets:
 EOF
     printf 'instance-id: cwh-e2e-%s\nlocal-hostname: cwh-vm-%s\n' "$node" "$node" > "$private_dir/$node-meta.yml"
     cloud-localds --network-config="$private_dir/$node-network.yml" "$private_dir/$node-seed.iso" "$private_dir/$node-user.yml" "$private_dir/$node-meta.yml"
-    sudo qemu-system-x86_64 -machine "q35,accel=$accel" -cpu "$cpu" -m "$memory" -smp 1 \
+    sudo qemu-system-x86_64 -machine "q35,accel=$accel" -cpu "$cpu" -m "$memory" -smp 2 \
       -display none -monitor none -serial "file:$result_dir/$node-console.log" \
       -drive "file=$private_dir/$node.qcow2,if=virtio,format=qcow2" \
       -drive "file=$private_dir/$node-seed.iso,if=virtio,format=raw,readonly=on" \
@@ -122,6 +122,18 @@ EOF
     done
     [[ "$ready" == true ]] || { echo "VM cloud-init/SSH did not become ready: $node"; return 1; }
     ssh -F "$private_dir/ssh_config" "centos@$address" 'sudo getenforce; cat /proc/sys/kernel/random/boot_id'
+  done
+}
+
+qemu_host_diagnostics() {
+  free -h > "$result_dir/runner-memory.txt" 2>&1
+  df -h > "$result_dir/runner-disk.txt" 2>&1
+  ps -eo pid,ppid,comm,rss,stat --sort=-rss > "$result_dir/runner-processes.txt" 2>&1
+  sudo dmesg --ctime | tail -300 > "$result_dir/runner-kernel.txt" 2>&1
+  for metric in memory.max memory.current memory.events; do
+    if [[ -r "/sys/fs/cgroup/$metric" ]]; then
+      cat "/sys/fs/cgroup/$metric" > "$result_dir/runner-cgroup-$metric.txt"
+    fi
   done
 }
 

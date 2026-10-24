@@ -11,6 +11,7 @@ cleanup() {
   result=$?
   trap - EXIT
   set +e
+  qemu_host_diagnostics
   for index in "${!qemu_names[@]}"; do
     node=${qemu_names[$index]}
     address=${qemu_addresses[$index]}
@@ -27,5 +28,5 @@ cleanup() {
   exit "$result"
 }
 trap cleanup EXIT
-qemu_boot_guests 'operationhub:10.1.1.9:3072:50G' 'master:10.1.1.10:2048:100G' 'worker1:10.1.1.11:4096:50G'
+qemu_boot_guests 'operationhub:10.1.1.9:4096:50G' 'master:10.1.1.10:2048:100G' 'worker1:10.1.1.11:4096:50G'
 python tests/e2e/run-aws-notebooks.py --result-dir "$result_dir" --private-dir "$private_dir" --gateway "$gateway"
