@@ -65,7 +65,7 @@ unset token
 ready=false
 for attempt in $(seq 1 30); do
   nodes=$(docker exec "$manager" docker node ls --format '{{.Status}} {{.Availability}}')
-  if [[ $(printf '%s\n' "$nodes" | rg -c '^Ready Active$') == 2 ]]; then
+  if [[ $(printf '%s\n' "$nodes" | grep -c '^Ready Active$') == 2 ]]; then
     ready=true
     break
   fi
