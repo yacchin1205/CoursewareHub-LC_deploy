@@ -45,7 +45,7 @@ jobs:
   nfs:
     if: github.repository == 'yacchin1205/CoursewareHub-LC_deploy'
     runs-on: ubuntu-24.04
-    timeout-minutes: 25
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -58,7 +58,12 @@ jobs:
           python -m pip install -r tests/e2e/requirements.txt
           python -m ipykernel install --user --name python3
           ansible-galaxy collection install ansible.posix:2.1.0
-      - name: Run D01-D04 with real systemd, NFS and Docker installation
+          python -m playwright install --with-deps chromium
+      - name: Make room for CoursewareHub images
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc
+          df -h
+      - name: Build CoursewareHub and test the running service
         run: bash tests/e2e/nfs-notebook.sh
       - name: Save NFS experiment evidence
         if: always()

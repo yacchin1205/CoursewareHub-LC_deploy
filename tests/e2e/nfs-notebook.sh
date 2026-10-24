@@ -26,6 +26,10 @@ cleanup() {
   docker exec "$manager" docker stack ps smoke --no-trunc > "$result_dir/swarm-tasks.txt" 2>&1
   docker exec "$manager" docker service logs smoke_gateway > "$result_dir/swarm-gateway.log" 2>&1
   docker exec "$manager" docker service logs smoke_worker-http > "$result_dir/swarm-worker.log" 2>&1
+  docker exec "$manager" docker stack ps coursewarehub --no-trunc > "$result_dir/coursewarehub-tasks.txt" 2>&1
+  for service in auth-proxy jupyterhub postgres; do
+    docker exec "$manager" docker service logs "coursewarehub_$service" > "$result_dir/coursewarehub-$service.log" 2>&1
+  done
   docker rm -f "$worker" "$manager"
   docker network rm "$network"
   docker volume rm "$volume"

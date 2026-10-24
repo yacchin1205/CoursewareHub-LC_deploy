@@ -1,7 +1,7 @@
 FROM rockylinux:9
 
 ENV container=docker
-RUN dnf install -y systemd openssh-server sudo passwd python3 util-linux iproute \
+RUN dnf install -y systemd openssh-server openssl sudo passwd python3 util-linux iproute \
     && dnf clean all \
     && useradd -m centos \
     && passwd -d centos \
