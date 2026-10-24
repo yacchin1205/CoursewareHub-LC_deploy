@@ -24,10 +24,11 @@ EOF
   export ANSIBLE_SSH_ARGS="-F $private_dir/ssh_config"
   export ANSIBLE_NOCOLOR=1
   export ANSIBLE_PIPELINING=1
-  local image=Rocky-9-GenericCloud-Base-9.8-20260525.0.x86_64.qcow2
-  curl --fail --location --retry 3 "https://download.rockylinux.org/pub/rocky/9/images/x86_64/$image" -o "$private_dir/base.qcow2"
-  printf '%s  %s\n' 92c206cc6f790c61583247eefe87890f8828420662c17cacf247cec78ab4eec8 "$private_dir/base.qcow2" | sha256sum -c -
-  qemu-img info --output=json "$private_dir/base.qcow2" > "$result_dir/base-image.json"
+  source tests/e2e/guest-image.env
+  local image_dir="${CWH_E2E_IMAGE_CACHE:-$private_dir}"
+  bash tests/e2e/prepare-guest-image.sh "$image_dir"
+  local image_path="$image_dir/$CWH_E2E_GUEST_IMAGE"
+  qemu-img info --output=json "$image_path" > "$result_dir/base-image.json"
   sudo ip link add "$bridge" type bridge
   sudo ip address add "$gateway/24" dev "$bridge"
   sudo ip link set "$bridge" up
@@ -50,7 +51,7 @@ EOF
     sudo ip tuntap add "$tap" mode tap
     sudo ip link set "$tap" master "$bridge"
     sudo ip link set "$tap" up
-    qemu-img create -f qcow2 -F qcow2 -b "$private_dir/base.qcow2" "$private_dir/$node.qcow2" "$disk"
+    qemu-img create -f qcow2 -F qcow2 -b "$image_path" "$private_dir/$node.qcow2" "$disk"
     cat > "$private_dir/$node-user.yml" <<EOF
 #cloud-config
 hostname: cwh-vm-$node

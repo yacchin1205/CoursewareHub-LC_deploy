@@ -6,6 +6,7 @@ on:
     paths:
       - '.github/workflows/e2e-aws.yml'
       - '.github/actions/setup-coursewarehub-tests/**'
+      - '.github/actions/setup-qemu-guests/**'
       - 'tests/e2e/**'
       - 'D01_OperationHubをAWSに構築.ipynb'
       - 'coursewarehub/**'
@@ -26,13 +27,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/setup-coursewarehub-tests
-      - name: Install local AWS provider and VM tools
-        run: |
-          python -m pip install -r tests/e2e/requirements-aws.txt
-          sudo apt-get update
-          sudo apt-get install -y qemu-system-x86 qemu-utils cloud-image-utils
-          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc
-          df -h
+      - name: Install local AWS provider
+        run: python -m pip install -r tests/e2e/requirements-aws.txt
+      - uses: ./.github/actions/setup-qemu-guests
       - name: Execute AWS construction notebooks and test the constructed services
         run: bash tests/e2e/aws-notebook.sh
       - name: Prepare evidence permissions

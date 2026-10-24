@@ -1,0 +1,32 @@
+name: Set up QEMU guests
+description: Install VM tools and restore a verified cloud image
+runs:
+  using: composite
+  steps:
+    - name: Install QEMU and make room for guest disks
+      shell: bash
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y qemu-system-x86 qemu-utils cloud-image-utils
+        sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc
+        df -h
+    - name: Read guest image identity
+      id: image
+      shell: bash
+      run: |
+        source tests/e2e/guest-image.env
+        echo "sha=$CWH_E2E_GUEST_IMAGE_SHA256" >> "$GITHUB_OUTPUT"
+        echo "CWH_E2E_IMAGE_CACHE=$RUNNER_TEMP/coursewarehub-cloud-image" >> "$GITHUB_ENV"
+    - uses: actions/cache/restore@v4
+      id: restore
+      with:
+        path: ${{ runner.temp }}/coursewarehub-cloud-image
+        key: rocky-cloud-image-${{ steps.image.outputs.sha }}
+    - name: Verify or download the guest image
+      shell: bash
+      run: bash tests/e2e/prepare-guest-image.sh "$CWH_E2E_IMAGE_CACHE"
+    - uses: actions/cache/save@v4
+      if: steps.restore.outputs.cache-hit != 'true'
+      with:
+        path: ${{ runner.temp }}/coursewarehub-cloud-image
+        key: rocky-cloud-image-${{ steps.image.outputs.sha }}
