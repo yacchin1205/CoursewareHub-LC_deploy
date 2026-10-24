@@ -20,6 +20,12 @@ cleanup() {
     timeout 10s docker exec "$node" findmnt > "$result_dir/$node-mounts.txt" 2>&1
     timeout 10s docker exec "$node" cat /etc/fstab > "$result_dir/$node-fstab.txt" 2>&1
     timeout 10s docker exec "$node" docker info > "$result_dir/$node-docker.txt" 2>&1
+    if task_ids=$(timeout 10s docker exec "$node" docker ps -aq --filter label=com.docker.swarm.service.name 2>/dev/null); then
+      while read -r task_id; do
+        [[ "$task_id" =~ ^[a-f0-9]{12,64}$ ]] || continue
+        timeout 10s docker exec "$node" docker inspect --format '{{json .State}}' "$task_id" > "$result_dir/$node-container-$task_id-state.json" 2>&1
+      done <<< "$task_ids"
+    fi
   done
   timeout 10s docker exec "$manager" exportfs -v > "$result_dir/exports.txt" 2>&1
   timeout 10s docker exec "$manager" docker node ls > "$result_dir/swarm-nodes.txt" 2>&1
