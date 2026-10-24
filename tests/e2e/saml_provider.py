@@ -24,6 +24,7 @@ NS = {"saml": "urn:oasis:names:tc:SAML:2.0:assertion",
       "soap": "http://schemas.xmlsoap.org/soap/envelope/"}
 BINDING = "urn:oasis:names:tc:SAML:2.0:bindings:"
 MAIL = "urn:oid:0.9.2342.19200300.100.1.3"
+EPPN = "urn:oid:1.3.6.1.4.1.5923.1.1.1.6"
 GROUP = "urn:oid:1.3.6.1.4.1.5923.1.5.1.1"
 
 
@@ -110,9 +111,10 @@ class SAMLProvider:
             sub(sub(authn, "saml", "AuthnContext"), "saml", "AuthnContextClassRef",
                 "urn:oasis:names:tc:SAML:2.0:ac:classes:PasswordProtectedTransport")
         attributes = sub(assertion, "saml", "AttributeStatement")
-        values = {GROUP: "urn:unauthorized-group" if self.mode == "unauthorized-group" else self.authorized_group}
-        if not attribute_query:
-            values[MAIL] = self.email
+        if attribute_query:
+            values = {GROUP: "urn:unauthorized-group" if self.mode == "unauthorized-group" else self.authorized_group}
+        else:
+            values = {MAIL: self.email, EPPN: self.email}
         for name, value in values.items():
             attribute = sub(attributes, "saml", "Attribute", Name=name, NameFormat="urn:oasis:names:tc:SAML:2.0:attrname-format:uri")
             sub(attribute, "saml", "AttributeValue", value)
