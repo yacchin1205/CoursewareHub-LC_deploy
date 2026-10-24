@@ -133,6 +133,12 @@ def check_coursewarehub(results, base_url, email, password, manager, worker, *, 
             manager.run(["chown", username + ":" + username, home + "/.ssh/known_hosts"])
 
             d06_name = "D06_CoursewareHubコンテンツの配備.ipynb"
+            # Completed construction cells are frozen by run-through-control.
+            # Execute a fresh recipe when checking deployment after an update.
+            d06_source = Path(__file__).resolve().parents[2] / "coursewarehub" / d06_name
+            recipe = json.loads(d06_source.read_text())
+            user_fetch(user_prefix + "api/contents/" + quote(d06_name), "PUT",
+                       {"type": "notebook", "format": "json", "content": recipe})
             page.goto(base_url + user_prefix + "notebooks/" + quote(d06_name))
             page.wait_for_function("window.Jupyter && Jupyter.notebook && Jupyter.notebook.kernel && Jupyter.notebook.kernel.is_connected()")
             page.evaluate("""() => {
