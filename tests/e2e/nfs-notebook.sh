@@ -64,9 +64,13 @@ Host *
   IdentityFile $private_dir/id_ed25519
   IdentitiesOnly yes
   ConnectTimeout 5
+  ControlMaster auto
+  ControlPersist 60s
+  ControlPath $private_dir/ssh-%C
 EOF
 export ANSIBLE_SSH_ARGS="-F $private_dir/ssh_config"
 export ANSIBLE_NOCOLOR=1
+export ANSIBLE_PIPELINING=1
 docker network create "$network"
 docker volume create "$volume"
 for node in "$manager" "$worker"; do

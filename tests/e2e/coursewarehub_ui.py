@@ -83,7 +83,11 @@ def check_coursewarehub(results, base_url, email, password, manager, worker):
                        {"type": "notebook", "format": "json", "content": notebook})
             page.goto(base_url + user_prefix + "notebooks/e2e-runtime.ipynb")
             page.wait_for_function("window.Jupyter && Jupyter.notebook && Jupyter.notebook.kernel && Jupyter.notebook.kernel.is_connected()")
-            source = ('from pathlib import Path\n'
+            expected_uid = int(subprocess.check_output(
+                ["docker", "exec", manager, "id", "-u", username], text=True).strip())
+            assert expected_uid > 0
+            source = ('import os\nfrom pathlib import Path\n'
+                      f'assert os.getuid() == {expected_uid}, os.getuid()\n'
                       'Path("e2e-persist.txt").write_text("persistent-user-data")\n'
                       'print("E2E_RESULT", 6 * 7)')
             page.evaluate("source => { const c = Jupyter.notebook.get_cell(0); c.set_text(source); c.execute(); }", source)
@@ -92,7 +96,7 @@ def check_coursewarehub(results, base_url, email, password, manager, worker):
             saved = user_fetch(user_prefix + "api/contents/e2e-runtime.ipynb")
             assert "E2E_RESULT" in str(saved["content"]["cells"][0]["source"]), saved
             page.screenshot(path=str(results / "executed-cell.png"), full_page=True)
-            passed("browser executed Python cell and saved Notebook through the running server")
+            passed("browser executed Python as the provisioned non-root UID and saved the Notebook")
 
             # Pin the fixture host identities for the administrator's real SSH client.
             known_hosts = []
