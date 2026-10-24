@@ -7,6 +7,6 @@ USER root
 
 COPY --chmod=755 singleuser_healthcheck.py /etc/jupyter/docker_healthcheck.py
 
-RUN mamba install --quiet --yes awscli passlib && mamba clean --all -f -y
+RUN python3 -m pip install --no-cache-dir awscli==1.46.2 passlib==1.7.4
 
 USER $NB_USER
