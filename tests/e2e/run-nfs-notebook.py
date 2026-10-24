@@ -1,4 +1,4 @@
-"""Run D01-D03 with real systemd/NFS, then test a container restart."""
+"""Build CoursewareHub with the construction notebooks and test its running service."""
 import argparse
 import json
 import os
@@ -187,6 +187,13 @@ def main():
     check_coursewarehub(results, "https://coursewarehub.test", "ciadmin@example.test",
                         os.environ["CWH_TEST_ADMIN_PASSWORD"], args.manager_container,
                         args.worker_container)
+    execute("O01_CoursewareHubの更新.ipynb", dict(
+        hosts_file=str(inventory), target_group=group,
+        db_password_env="CWH_TEST_DB_PASSWORD", intermediate_certfile="",
+        check_mode_first=False))
+    check_coursewarehub(results / "after-update", "https://coursewarehub.test",
+                        "ciadmin@example.test", os.environ["CWH_TEST_ADMIN_PASSWORD"],
+                        args.manager_container, args.worker_container, expected_existing=True)
 
 
 if __name__ == "__main__":

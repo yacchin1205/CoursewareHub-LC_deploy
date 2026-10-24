@@ -8,8 +8,9 @@ from urllib.parse import quote
 from playwright.sync_api import sync_playwright, expect
 
 
-def check_coursewarehub(results, base_url, email, password, manager, worker):
+def check_coursewarehub(results, base_url, email, password, manager, worker, *, expected_existing=False):
     results = Path(results)
+    results.mkdir(parents=True, exist_ok=True)
     steps = []
     def passed(name):
         steps.append(name)
@@ -76,6 +77,12 @@ def check_coursewarehub(results, base_url, email, password, manager, worker):
                 return json.loads(result["text"])
 
             user_prefix = "/user/" + username + "/"
+            if expected_existing:
+                persisted = user_fetch(user_prefix + "api/contents/e2e-persist.txt")
+                assert persisted["content"] == "persistent-user-data", persisted
+                saved = user_fetch(user_prefix + "api/contents/e2e-runtime.ipynb")
+                assert "E2E_RESULT" in str(saved["content"]["cells"][0]["source"]), saved
+                passed("user file and saved Notebook survived the O01 stack update")
             notebook = {"nbformat": 4, "nbformat_minor": 5, "metadata": {
                 "kernelspec": {"name": "python3", "language": "python", "display_name": "Python 3"}},
                 "cells": [{"cell_type": "code", "id": "runtime-check", "metadata": {},
