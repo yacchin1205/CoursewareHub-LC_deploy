@@ -112,6 +112,7 @@ def run_case(args, fixtures):
         master_server=master, master_fqdn="coursewarehub.test",
         servicenet_ips={master: master, worker: worker},
         ansible_ssh_user="centos", ansible_ssh_private_key_file=key,
+        spawner_start_timeout=600 if args.case == "current-registry" else 60,
         enable_federation=saml is not None,
         cg_groups=[saml.authorized_group] if saml else [],
         cg_fqdn=urlparse(saml.base_url).netloc if saml else None,

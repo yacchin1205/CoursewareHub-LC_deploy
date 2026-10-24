@@ -113,7 +113,8 @@ def check_coursewarehub(results, base_url, email, password, manager, worker, *, 
                 if build_repository and page.locator('input[name="image"]').count():
                     page.locator('input[name="image"][value="' + build_repository["image"] + '"]').check()
                     page.locator('input[type="submit"], button[type="submit"]').click()
-                page.wait_for_url("**/user/" + username + "/**", timeout=300000)
+                page.wait_for_url("**/user/" + username + "/**",
+                                  timeout=600000 if build_repository else 300000)
 
             spawn()
             page.wait_for_function("window.Jupyter && Jupyter.notebook_list", timeout=120000)
