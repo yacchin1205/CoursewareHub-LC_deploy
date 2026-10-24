@@ -12,6 +12,7 @@ import urllib.request
 import papermill as pm
 import yaml
 from coursewarehub_ui import check_coursewarehub
+from lti_platform import running_platform, check_lti
 
 
 def command(args):
@@ -171,29 +172,36 @@ def main():
                     input=f"\n{master} coursewarehub.test\n", text=True, check=True)
     os.environ["CWH_TEST_DB_PASSWORD"] = secrets.token_hex(24)
     os.environ["CWH_TEST_ADMIN_PASSWORD"] = secrets.token_hex(24)
-    execute("D05_CoursewareHubの準備.ipynb", dict(
-        hosts_file=str(inventory), target_group=group,
-        db_password_env="CWH_TEST_DB_PASSWORD", admin_password_env="CWH_TEST_ADMIN_PASSWORD",
-        teacher_email="ciadmin@example.test", intermediate_certfile="",
-        generate_self_signed_cert=True, check_mode_first=False, configure_selinux=False,
-        legacy_singleuser_profile=True,
-        logo_path=str(repo / "coursewarehub/jupyterhub-logo.png"),
-        contents_notebook_path=str(repo / "coursewarehub/D06_CoursewareHubコンテンツの配備.ipynb"),
-        deploy_repo_ref="db991a98e6c321a2643b8ded9d4c2b6e8987459f",
-        resource_schema_url="https://raw.githubusercontent.com/NII-cloud-operation/CoursewareHub-LC_platform/d08692cfb77cd427dd1fb197d499a26f9d310003/jupyterhub/resources-schema.json"))
-    (results / "construction-summary.json").write_text(json.dumps({
-        "D01_D05_execution": "passed", "runtime_verification": "pending",
-    }, indent=2) + "\n")
-    check_coursewarehub(results, "https://coursewarehub.test", "ciadmin@example.test",
-                        os.environ["CWH_TEST_ADMIN_PASSWORD"], args.manager_container,
-                        args.worker_container)
-    execute("O01_CoursewareHubの更新.ipynb", dict(
-        hosts_file=str(inventory), target_group=group,
-        db_password_env="CWH_TEST_DB_PASSWORD", intermediate_certfile="",
-        check_mode_first=False))
-    check_coursewarehub(results / "after-update", "https://coursewarehub.test",
-                        "ciadmin@example.test", os.environ["CWH_TEST_ADMIN_PASSWORD"],
-                        args.manager_container, args.worker_container, expected_existing=True)
+    gateway = command(["docker", "inspect", "--format",
+                       "{{range .NetworkSettings.Networks}}{{.Gateway}}{{end}}",
+                       args.manager_container]).strip()
+    email = "ciadmin@example.test"
+    with running_platform("http://" + gateway + ":18500", "https://coursewarehub.test", email) as platform:
+        execute("D05_CoursewareHubの準備.ipynb", dict(
+            hosts_file=str(inventory), target_group=group,
+            db_password_env="CWH_TEST_DB_PASSWORD", admin_password_env="CWH_TEST_ADMIN_PASSWORD",
+            teacher_email=email, intermediate_certfile="",
+            generate_self_signed_cert=True, check_mode_first=False, configure_selinux=False,
+            legacy_singleuser_profile=True, lti_config=platform.registration,
+            logo_path=str(repo / "coursewarehub/jupyterhub-logo.png"),
+            contents_notebook_path=str(repo / "coursewarehub/D06_CoursewareHubコンテンツの配備.ipynb"),
+            deploy_repo_ref="db991a98e6c321a2643b8ded9d4c2b6e8987459f",
+            resource_schema_url="https://raw.githubusercontent.com/NII-cloud-operation/CoursewareHub-LC_platform/d08692cfb77cd427dd1fb197d499a26f9d310003/jupyterhub/resources-schema.json"))
+        (results / "construction-summary.json").write_text(json.dumps({
+            "D01_D05_execution": "passed", "runtime_verification": "pending",
+        }, indent=2) + "\n")
+        username = check_coursewarehub(results, "https://coursewarehub.test", email,
+                            os.environ["CWH_TEST_ADMIN_PASSWORD"], args.manager_container,
+                            args.worker_container)
+        check_lti(results / "lti", platform, username)
+        execute("O01_CoursewareHubの更新.ipynb", dict(
+            hosts_file=str(inventory), target_group=group,
+            db_password_env="CWH_TEST_DB_PASSWORD", intermediate_certfile="",
+            check_mode_first=False))
+        check_coursewarehub(results / "after-update", "https://coursewarehub.test",
+                            email, os.environ["CWH_TEST_ADMIN_PASSWORD"],
+                            args.manager_container, args.worker_container, expected_existing=True)
+        check_lti(results / "after-update" / "lti", platform, username)
 
 
 if __name__ == "__main__":

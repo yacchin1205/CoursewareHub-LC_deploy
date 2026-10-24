@@ -180,3 +180,5 @@ def check_coursewarehub(results, base_url, email, password, manager, worker, *, 
             context.tracing.stop(path=str(results / "runtime-trace.zip"))
             context.close()
             browser.close()
+
+    return username
