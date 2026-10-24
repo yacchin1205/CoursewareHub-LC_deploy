@@ -57,9 +57,44 @@ def check_coursewarehub(results, base_url, email, password, manager, worker, *, 
             username = user["name"]
             passed("local administrator logged in through browser")
 
+            def user_fetch(path, method="GET", body=None):
+                result = page.evaluate("""async ({path, method, body}) => {
+                    const cookie = document.cookie.match(/(?:^|; )_xsrf=([^;]*)/);
+                    const token = (window.jhdata && window.jhdata.xsrf_token) || (cookie ? decodeURIComponent(cookie[1]) : '');
+                    const response = await fetch(path, {
+                        method, headers: {'Content-Type': 'application/json',
+                        'X-XSRFToken': token},
+                        body: body === null ? undefined : JSON.stringify(body)
+                    });
+                    return {status: response.status, text: await response.text()};
+                }""", dict(path=path, method=method, body=body))
+                assert 200 <= result["status"] < 300, result
+                return json.loads(result["text"])
+
+            def stop():
+                page.goto(base_url + "/hub/home")
+                with page.expect_response(lambda response:
+                        "/hub/api/users/" in response.url and response.url.split("?", 1)[0].endswith("/server")
+                        and response.request.method == "DELETE", timeout=60000) as stopping:
+                    page.locator("#stop").click()
+                assert stopping.value.status in [202, 204], stopping.value.status
+                # The Start button appears while the asynchronous DELETE is still pending.
+                for attempt in range(60):
+                    model = user_fetch("/hub/api/user")
+                    if "" not in model.get("servers", {}) and model.get("server") is None:
+                        break
+                    time.sleep(2)
+                else:
+                    raise AssertionError("User server did not finish stopping: " + str(model))
+                expect(page.locator("#start")).to_be_visible(timeout=120000)
+
             if build_repository and not expected_existing:
                 build_environment(page, base_url, build_repository, results, manager.name)
                 passed("repo2docker built an image from local Git and published it to the authenticated registry")
+                page.goto(base_url + "/hub/home")
+                current = user_fetch("/hub/api/user")
+                if current.get("server") or "" in current.get("servers", {}):
+                    stop()
 
             def spawn():
                 response = page.goto(base_url + "/hub/spawn", wait_until="domcontentloaded")
@@ -74,20 +109,6 @@ def check_coursewarehub(results, base_url, email, password, manager, worker, *, 
             page.wait_for_function("window.Jupyter && Jupyter.notebook_list", timeout=120000)
             page.screenshot(path=str(results / "user-server.png"), full_page=True)
             passed("user Notebook server started and tree UI rendered")
-
-            def user_fetch(path, method="GET", body=None):
-                result = page.evaluate("""async ({path, method, body}) => {
-                    const cookie = document.cookie.match(/(?:^|; )_xsrf=([^;]*)/);
-                    const token = (window.jhdata && window.jhdata.xsrf_token) || (cookie ? decodeURIComponent(cookie[1]) : '');
-                    const response = await fetch(path, {
-                        method, headers: {'Content-Type': 'application/json',
-                        'X-XSRFToken': token},
-                        body: body === null ? undefined : JSON.stringify(body)
-                    });
-                    return {status: response.status, text: await response.text()};
-                }""", dict(path=path, method=method, body=body))
-                assert 200 <= result["status"] < 300, result
-                return json.loads(result["text"])
 
             user_prefix = "/user/" + username + "/"
             if expected_existing:
@@ -109,13 +130,14 @@ def check_coursewarehub(results, base_url, email, password, manager, worker, *, 
             source = ('import os\nfrom pathlib import Path\n'
                       f'assert os.getuid() == {expected_uid}, os.getuid()\n'
                       'Path("e2e-persist.txt").write_text("persistent-user-data")\n'
-                      'print("E2E_RESULT", 6 * 7)')
+                      '')
             if build_repository:
                 source += '\nassert Path("/etc/cwh-e2e-built").read_text().strip() == "built-by-repo2docker"\nprint("E2E_BUILT_IMAGE")'
+            source += '\nprint("E2E_RESULT", 6 * 7)'
             page.evaluate("source => { const c = Jupyter.notebook.get_cell(0); c.set_text(source); c.execute(); }", source)
-            expect(page.locator(".output_area")).to_contain_text("E2E_RESULT 42", timeout=120000)
+            expect(page.locator(".code_cell .output")).to_contain_text("E2E_RESULT 42", timeout=120000)
             if build_repository:
-                expect(page.locator(".output_area")).to_contain_text("E2E_BUILT_IMAGE", timeout=120000)
+                expect(page.locator(".code_cell .output")).to_contain_text("E2E_BUILT_IMAGE", timeout=120000)
                 passed("the user kernel ran inside the repo2docker-built image")
             page.evaluate("() => Jupyter.notebook.save_notebook()")
             saved = user_fetch(user_prefix + "api/contents/e2e-runtime.ipynb")
@@ -165,21 +187,7 @@ def check_coursewarehub(results, base_url, email, password, manager, worker, *, 
             assert teacher_tool["type"] == "notebook", teacher_tool
             passed("D06 executed in the user Notebook server and deployed teacher tools are accessible")
 
-            page.goto(base_url + "/hub/home")
-            with page.expect_response(lambda response:
-                    "/hub/api/users/" in response.url and response.url.split("?", 1)[0].endswith("/server")
-                    and response.request.method == "DELETE", timeout=60000) as stopping:
-                page.locator("#stop").click()
-            assert stopping.value.status in [202, 204], stopping.value.status
-            # The Start button appears while the asynchronous DELETE is still pending.
-            for attempt in range(60):
-                model = user_fetch("/hub/api/user")
-                if "" not in model.get("servers", {}) and model.get("server") is None:
-                    break
-                time.sleep(2)
-            else:
-                raise AssertionError("User server did not finish stopping: " + str(model))
-            expect(page.locator("#start")).to_be_visible(timeout=120000)
+            stop()
             spawn()
             page.wait_for_function("window.Jupyter && Jupyter.notebook_list", timeout=120000)
             persisted = user_fetch(user_prefix + "api/contents/e2e-persist.txt")
