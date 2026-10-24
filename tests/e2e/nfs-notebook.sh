@@ -1,0 +1,73 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+result_dir="${GITHUB_WORKSPACE:-$PWD}/test-results/nfs-notebook"
+mkdir -p "$result_dir"
+exec > >(tee "$result_dir/run.log") 2>&1
+private_dir=$(mktemp -d)
+manager=cwh-nfs-master
+worker=cwh-nfs-worker
+network=cwh-nfs-network
+volume=cwh-nfs-export
+
+cleanup() {
+  result=$?
+  trap - EXIT
+  set +e
+  for node in "$manager" "$worker"; do
+    docker logs "$node" > "$result_dir/$node.log" 2>&1
+    docker exec "$node" journalctl --no-pager > "$result_dir/$node-journal.txt" 2>&1
+    docker exec "$node" systemctl --failed --no-pager > "$result_dir/$node-services.txt" 2>&1
+    docker exec "$node" findmnt > "$result_dir/$node-mounts.txt" 2>&1
+    docker exec "$node" cat /etc/fstab > "$result_dir/$node-fstab.txt" 2>&1
+  done
+  docker exec "$manager" exportfs -v > "$result_dir/exports.txt" 2>&1
+  docker rm -f "$worker" "$manager"
+  docker network rm "$network"
+  docker volume rm "$volume"
+  rm -rf "$private_dir"
+  printf 'Experiment exit status: %s\n' "$result" > "$result_dir/result.txt"
+  exit "$result"
+}
+trap cleanup EXIT
+
+# Both guests use the runner kernel; a missing NFS module is an actual failure.
+sudo modprobe nfsd
+sudo modprobe nfs
+docker build -t cwh-systemd-node:local tests/e2e/systemd-node
+ssh-keygen -q -t ed25519 -N '' -f "$private_dir/id_ed25519"
+touch "$private_dir/known_hosts"
+cat > "$private_dir/ssh_config" <<EOF
+Host *
+  BatchMode yes
+  StrictHostKeyChecking yes
+  UserKnownHostsFile $private_dir/known_hosts
+  IdentityFile $private_dir/id_ed25519
+  IdentitiesOnly yes
+  ConnectTimeout 5
+EOF
+export ANSIBLE_SSH_ARGS="-F $private_dir/ssh_config"
+export ANSIBLE_NOCOLOR=1
+docker network create "$network"
+docker volume create "$volume"
+for node in "$manager" "$worker"; do
+  volumes=()
+  if [[ "$node" == "$manager" ]]; then volumes=(-v "$volume:/exported"); fi
+  docker run -d --privileged --cgroupns=private --name "$node" --hostname "$node" \
+    --network "$network" --tmpfs /run --tmpfs /tmp \
+    -v "$private_dir/id_ed25519.pub:/ci-authorized-key:ro" \
+    "${volumes[@]}" cwh-systemd-node:local
+  ready=false
+  for attempt in $(seq 1 60); do
+    if docker exec "$node" systemctl is-active --quiet sshd; then ready=true; break; fi
+    sleep 2
+  done
+  [[ "$ready" == true ]] || { echo "systemd/sshd did not start: $node"; exit 1; }
+  node_ip=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "$node")
+  host_key=$(docker exec "$node" cat /etc/ssh/ssh_host_ed25519_key.pub)
+  printf '%s %s\n' "$node_ip" "$host_key" >> "$private_dir/known_hosts"
+done
+manager_ip=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "$manager")
+worker_ip=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "$worker")
+python tests/e2e/run-nfs-notebook.py --result-dir "$result_dir" \
+  --key "$private_dir/id_ed25519" --manager-ip "$manager_ip" --worker-ip "$worker_ip" \
+  --worker-container "$worker"
