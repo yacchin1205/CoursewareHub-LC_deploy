@@ -18,7 +18,7 @@ def check_coursewarehub(results, base_url, email, password, manager, worker, *, 
         (results / "runtime-summary.json").write_text(json.dumps({
             "passed": steps, "status": "running",
         }, indent=2) + "\n")
-        print("RUNTIME PASS:", name)
+        print("RUNTIME PASS:", name, flush=True)
 
     with sync_playwright() as pw:
         browser = pw.chromium.launch()
@@ -165,7 +165,19 @@ def check_coursewarehub(results, base_url, email, password, manager, worker, *, 
             passed("D06 executed in the user Notebook server and deployed teacher tools are accessible")
 
             page.goto(base_url + "/hub/home")
-            page.locator("#stop").click()
+            with page.expect_response(lambda response:
+                    "/hub/api/users/" in response.url and response.url.split("?", 1)[0].endswith("/server")
+                    and response.request.method == "DELETE", timeout=60000) as stopping:
+                page.locator("#stop").click()
+            assert stopping.value.status in [202, 204], stopping.value.status
+            # The Start button appears while the asynchronous DELETE is still pending.
+            for attempt in range(60):
+                model = user_fetch("/hub/api/user")
+                if "" not in model.get("servers", {}) and model.get("server") is None:
+                    break
+                time.sleep(2)
+            else:
+                raise AssertionError("User server did not finish stopping: " + str(model))
             expect(page.locator("#start")).to_be_visible(timeout=120000)
             spawn()
             page.wait_for_function("window.Jupyter && Jupyter.notebook_list", timeout=120000)
