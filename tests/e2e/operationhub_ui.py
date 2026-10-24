@@ -86,7 +86,9 @@ def check_operationhub(results, base_url, username, password, aws_parameters):
             hosts = fetch(prefix + 'api/contents/hosts')['content']
             assert '[' + aws_parameters['cloudformation_stack_name'] + ']' in hosts, hosts
             probe = nbformat.v4.new_notebook(cells=[nbformat.v4.new_code_cell(
-                'import os\nassert os.getuid() > 0\nprint("OPHUB_KERNEL", os.getuid(), 6 * 7)')])
+                'import os\nfrom jupyter_core.paths import jupyter_runtime_dir\n'
+                'assert os.getuid() > 0\nassert jupyter_runtime_dir() == "/tmp/jupyter-runtime"\n'
+                'print("OPHUB_KERNEL", os.getuid(), 6 * 7)')])
             fetch(prefix + 'api/contents/e2e-operationhub.ipynb', 'PUT',
                   {'type': 'notebook', 'format': 'json', 'content': probe})
             page.goto(base_url + prefix + 'notebooks/e2e-operationhub.ipynb')

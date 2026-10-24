@@ -138,6 +138,8 @@ def check_coursewarehub(results, base_url, email, password, manager, worker, *, 
             expected_uid = int(manager.output(["id", "-u", username]))
             assert expected_uid > 0
             source = ('import os\nfrom pathlib import Path\n'
+                      'from jupyter_core.paths import jupyter_runtime_dir\n'
+                      'assert jupyter_runtime_dir() == "/tmp/jupyter-runtime"\n'
                       f'assert os.getuid() == {expected_uid}, os.getuid()\n'
                       'Path("e2e-persist.txt").write_text("persistent-user-data")\n')
             if build_repository:
