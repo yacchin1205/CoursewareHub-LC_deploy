@@ -5,6 +5,7 @@ on:
     branches: [feature/e2e-test]
     paths:
       - '.github/workflows/e2e-container-smoke.yml'
+      - '.github/actions/setup-coursewarehub-tests/**'
       - 'tests/e2e/**'
       - 'coursewarehub/**'
 
@@ -54,17 +55,7 @@ jobs:
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-          cache: pip
-          cache-dependency-path: tests/e2e/requirements.txt
-      - name: Install Notebook and Ansible dependencies
-        run: |
-          python -m pip install -r tests/e2e/requirements.txt
-          python -m ipykernel install --user --name python3
-          ansible-galaxy collection install git+https://github.com/ansible-collections/ansible.posix.git,e54b8bf68f583f2324861a8cb113d4f1bb20f3de
-          python -m playwright install --with-deps chromium
+      - uses: ./.github/actions/setup-coursewarehub-tests
       - name: Make room for CoursewareHub images
         run: |
           sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc
@@ -77,5 +68,29 @@ jobs:
         with:
           name: nfs-notebook-evidence-${{ matrix.platform }}
           path: test-results/nfs-notebook/
+          if-no-files-found: warn
+          retention-days: 7
+
+  vm:
+    if: github.repository == 'yacchin1205/CoursewareHub-LC_deploy'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-coursewarehub-tests
+      - name: Install QEMU and make room for guest disks
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y qemu-system-x86 qemu-utils cloud-image-utils
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc
+          df -h
+      - name: Build CoursewareHub with OS reboot, SELinux, and Compose v1
+        run: bash tests/e2e/vm-notebook.sh
+      - name: Save VM evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: vm-notebook-evidence
+          path: test-results/vm-notebook/
           if-no-files-found: warn
           retention-days: 7

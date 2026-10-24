@@ -205,8 +205,7 @@ def check_saml(results, provider, expected_username, manager):
 
     results = Path(results)
     results.mkdir(parents=True, exist_ok=True)
-    certificate = subprocess.check_output(['docker', 'exec', manager, 'cat',
-        '/etc/jupyterhub/nginx/certs/auth-proxy.chained.cer'], text=True)
+    certificate = manager.output(['cat', '/etc/jupyterhub/nginx/certs/auth-proxy.chained.cer'])
     tls = ssl.create_default_context(cadata=certificate)
     with urllib.request.urlopen(provider.tool_url + '/simplesaml/module.php/saml/sp/metadata.php/default-sp',
                                 context=tls, timeout=30) as response:

@@ -1,7 +1,6 @@
 """Runtime acceptance tests, separate from the deployment notebooks."""
 import json
 from pathlib import Path
-import subprocess
 import time
 from urllib.parse import quote
 
@@ -57,7 +56,7 @@ def check_coursewarehub(results, base_url, email, password, manager, worker, *, 
             passed("local administrator logged in through browser")
 
             if build_repository and not expected_existing:
-                build_environment(page, base_url, build_repository, results, manager)
+                build_environment(page, base_url, build_repository, results, manager.name)
                 passed("repo2docker built an image from local Git and published it to the authenticated registry")
 
             def spawn():
@@ -102,8 +101,7 @@ def check_coursewarehub(results, base_url, email, password, manager, worker, *, 
                        {"type": "notebook", "format": "json", "content": notebook})
             page.goto(base_url + user_prefix + "notebooks/e2e-runtime.ipynb")
             page.wait_for_function("window.Jupyter && Jupyter.notebook && Jupyter.notebook.kernel && Jupyter.notebook.kernel.is_connected()")
-            expected_uid = int(subprocess.check_output(
-                ["docker", "exec", manager, "id", "-u", username], text=True).strip())
+            expected_uid = int(manager.output(["id", "-u", username]))
             assert expected_uid > 0
             source = ('import os\nfrom pathlib import Path\n'
                       f'assert os.getuid() == {expected_uid}, os.getuid()\n'
@@ -125,17 +123,11 @@ def check_coursewarehub(results, base_url, email, password, manager, worker, *, 
             # Pin the fixture host identities for the administrator's real SSH client.
             known_hosts = []
             for node in [manager, worker]:
-                ip = subprocess.check_output(["docker", "inspect", "-f",
-                    "{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}", node], text=True).strip()
-                key = subprocess.check_output(["docker", "exec", node, "cat",
-                    "/etc/ssh/ssh_host_ed25519_key.pub"], text=True).strip()
-                known_hosts.append(ip + " " + key)
+                key = node.output(["cat", "/etc/ssh/ssh_host_ed25519_key.pub"])
+                known_hosts.append(node.address + " " + key)
             home = "/jupyter/users/" + username
-            subprocess.run(["docker", "exec", "-i", manager, "tee", home + "/.ssh/known_hosts"],
-                           input="\n".join(known_hosts) + "\n", text=True, check=True,
-                           stdout=subprocess.DEVNULL)
-            subprocess.run(["docker", "exec", manager, "chown", username + ":" + username,
-                            home + "/.ssh/known_hosts"], check=True)
+            manager.run(["tee", home + "/.ssh/known_hosts"], input="\n".join(known_hosts) + "\n")
+            manager.run(["chown", username + ":" + username, home + "/.ssh/known_hosts"])
 
             d06_name = "D06_CoursewareHubコンテンツの配備.ipynb"
             page.goto(base_url + user_prefix + "notebooks/" + quote(d06_name))

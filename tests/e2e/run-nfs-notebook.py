@@ -14,6 +14,7 @@ import urllib.request
 import papermill as pm
 import yaml
 from coursewarehub_ui import check_coursewarehub
+from guest import Guest
 from lti_platform import running_platform, check_lti
 from registry_fixture import running_registry, running_build_repository
 from saml_provider import running_provider, check_saml
@@ -35,8 +36,11 @@ def main():
     parser.add_argument("--worker-ip", required=True)
     parser.add_argument("--worker-container", required=True)
     parser.add_argument("--manager-container", required=True)
-    parser.add_argument("--case", choices=["legacy-2024", "current-registry", "federation"], default="legacy-2024")
-    parser.add_argument("--network", required=True)
+    parser.add_argument("--case", choices=["legacy-2024", "current-registry", "federation", "vm-os"], default="legacy-2024")
+    parser.add_argument("--network")
+    parser.add_argument("--transport", choices=["docker", "ssh"], default="docker")
+    parser.add_argument("--gateway")
+    parser.add_argument("--probe-url", default="http://127.0.0.1:18081/")
     args = parser.parse_args()
     with ExitStack() as fixtures:
         run_case(args, fixtures)
@@ -47,8 +51,13 @@ def run_case(args, fixtures):
     results = args.result_dir.resolve()
     work = results / "workspace"
     work.mkdir(parents=True, exist_ok=True)
+    manager_guest = Guest(args.manager_container, args.manager_ip, args.transport)
+    worker_guest = Guest(args.worker_container, args.worker_ip, args.transport)
+    if args.transport == "ssh":
+        for guest in [manager_guest, worker_guest]:
+            assert guest.output(["getenforce"]) == "Enforcing", "VM must start with SELinux enforcing"
     platform_tag = "master" if args.case == "current-registry" else "2024.03"
-    gateway = command(["docker", "inspect", "--format",
+    gateway = args.gateway or command(["docker", "inspect", "--format",
                        "{{range .NetworkSettings.Networks}}{{.Gateway}}{{end}}",
                        args.manager_container]).strip()
     email = "ciadmin@example.test"
@@ -105,14 +114,14 @@ def run_case(args, fixtures):
     execute("D03_NFSの準備.ipynb", dict(
         hosts_file=str(inventory), target_group=group,
         deploy_repo_ref="db991a98e6c321a2643b8ded9d4c2b6e8987459f",
-        check_mode_first=False, reboot_clients=False))
+        check_mode_first=args.transport == "ssh", reboot_clients=args.transport == "ssh"))
 
     def remote(host, cmd):
         return command(["ansible", "-i", str(inventory), host, "-b", "-m", "command", "-a", cmd])
 
     def inspect_mounts():
-        data = command(["docker", "exec", args.worker_container, "findmnt", "--json",
-                        "--output", "TARGET,SOURCE,FSTYPE", "--target", "/exchange"])
+        data = command(worker_guest.command(["findmnt", "--json",
+                        "--output", "TARGET,SOURCE,FSTYPE", "--target", "/exchange"]))
         mount = json.loads(data)["filesystems"][0]
         assert mount["target"] == "/exchange", mount
         assert mount["fstype"] in ["nfs", "nfs4"], mount
@@ -126,14 +135,13 @@ def run_case(args, fixtures):
     # A guest restart invalidates a multiplexed SSH session; open a fresh session afterward.
     subprocess.run(["ssh", *shlex.split(os.environ["ANSIBLE_SSH_ARGS"]), "-O", "exit",
                     "centos@" + worker], timeout=15, check=False)
-    command(["docker", "restart", "--time", "30", args.worker_container])
+    restart = worker_guest.restart()
     for attempt in range(60):
-        if subprocess.run(["docker", "exec", args.worker_container,
-                           "mountpoint", "-q", "/exchange"]).returncode == 0:
+        if worker_guest.run(["mountpoint", "-q", "/exchange"], check=False).returncode == 0:
             break
         time.sleep(2)
     else:
-        raise AssertionError("fstab NFS mount did not recover after container restart")
+        raise AssertionError("fstab NFS mount did not recover after guest restart")
     after = inspect_mounts()
     remote(worker, "grep -qx persisted-through-container-restart /exchange/ci-persistence")
     remote(worker, "sh -c 'echo worker-write-ok > /exchange/ci-worker-write'")
@@ -148,27 +156,26 @@ def run_case(args, fixtures):
         hosts_file=str(inventory), target_group=group + "_nodes",
         docker_packages=["docker-ce-27.5.1", "docker-ce-cli-27.5.1", "containerd.io"],
         docker_opts={"data-root": "/var/lib/docker", "insecure-registries": [registry.host]} if registry else None,
-        compose_version="2.39.4", network_prerequisites_confirmed=True,
+        compose_version="1.29.2" if args.case == "vm-os" else "2.39.4", network_prerequisites_confirmed=True,
         hosts_unsafe_writes=True))
     for attempt in range(30):
-        nodes = command(["docker", "exec", args.manager_container, "docker", "node", "ls",
-                         "--format", "{{.Status}} {{.Availability}}"])
+        nodes = command(manager_guest.command(["docker", "node", "ls",
+                         "--format", "{{.Status}} {{.Availability}}"]))
         if nodes.strip().splitlines().count("Ready Active") == 2:
             break
         time.sleep(2)
     else:
         raise AssertionError("D04 did not produce two Ready/Active Swarm nodes")
-    for node in [args.manager_container, args.worker_container]:
-        command(["docker", "exec", node, "docker", "pull", "busybox:1.37.0"])
+    for guest in [manager_guest, worker_guest]:
+        command(guest.command(["docker", "pull", "busybox:1.37.0"]))
     stack = yaml.safe_load((repo / "tests/e2e/swarm-smoke.yml").read_text())
     stack["services"]["worker-http"]["volumes"] = ["/exchange:/ci-shared"]
-    subprocess.run(["docker", "exec", "-i", args.manager_container, "sh", "-c",
-                    "cat > /tmp/swarm-smoke.yml"], input=yaml.safe_dump(stack), text=True, check=True)
-    command(["docker", "exec", args.manager_container, "docker", "stack", "deploy",
-             "--resolve-image", "never", "-c", "/tmp/swarm-smoke.yml", "smoke"])
+    manager_guest.run(["sh", "-c", "cat > /tmp/swarm-smoke.yml"], input=yaml.safe_dump(stack))
+    command(manager_guest.command(["docker", "stack", "deploy",
+             "--resolve-image", "never", "-c", "/tmp/swarm-smoke.yml", "smoke"]))
     for attempt in range(90):
         try:
-            with urllib.request.urlopen("http://127.0.0.1:18081/", timeout=3) as response:
+            with urllib.request.urlopen(args.probe_url, timeout=3) as response:
                 content = response.read().decode().strip()
             if content == "swarm-worker-shared-volume-ok":
                 break
@@ -179,20 +186,19 @@ def run_case(args, fixtures):
         raise AssertionError("D04 Swarm cross-node overlay workload failed")
     remote(master, "grep -qx swarm-worker-shared-volume-ok /exchange/probe.txt")
     (results / "nfs-summary.json").write_text(json.dumps({
-        "executed_notebooks": [record["notebook"] for record in construction_results],
         "real_nfs_server_and_client_roles": "passed",
-        "mount_before_restart": before, "mount_after_container_restart": after,
-        "cross_node_read_write": "passed", "container_restart_fstab_remount": "passed",
+        "mount_before_restart": before, "mount_after_restart": after, "restart": restart,
+        "cross_node_read_write": "passed", "restart_fstab_remount": "passed",
         "D04_package_install_systemd_compose_swarm": "passed",
         "swarm_overlay_and_nfs_workload": "passed",
     }, indent=2) + "\n")
-    print("PASS: D03 real NFS roles, NFS mount, cross-node read/write and container restart remount")
+    print("PASS: D03 real NFS roles, NFS mount, cross-node read/write and guest restart remount")
     print("PASS: D04 Docker installation, systemd configuration, Compose and Swarm creation; overlay/NFS workload")
 
-    command(["docker", "exec", args.manager_container, "docker", "stack", "rm", "smoke"])
+    command(manager_guest.command(["docker", "stack", "rm", "smoke"]))
     for attempt in range(60):
-        services = command(["docker", "exec", args.manager_container, "docker", "service", "ls",
-                            "--filter", "label=com.docker.stack.namespace=smoke", "-q"])
+        services = command(manager_guest.command(["docker", "service", "ls",
+                            "--filter", "label=com.docker.stack.namespace=smoke", "-q"]))
         if not services.strip():
             break
         time.sleep(2)
@@ -212,7 +218,8 @@ def run_case(args, fixtures):
             db_password_env="CWH_TEST_DB_PASSWORD", admin_password_env="CWH_TEST_ADMIN_PASSWORD",
             teacher_email=email, intermediate_certfile="",
             cgidp_metadata=str(saml_metadata) if saml_metadata else None,
-            generate_self_signed_cert=True, check_mode_first=False, configure_selinux=False,
+            generate_self_signed_cert=True, check_mode_first=args.transport == "ssh",
+            configure_selinux=args.transport == "ssh",
             legacy_singleuser_profile=registry is None, lti_config=platform.registration,
             registry_host=registry.host if registry else "",
             registry_password_env="CWH_TEST_REGISTRY_PASSWORD" if registry else None,
@@ -222,26 +229,23 @@ def run_case(args, fixtures):
             contents_notebook_path=str(repo / "coursewarehub/D06_CoursewareHubコンテンツの配備.ipynb"),
             deploy_repo_ref="db991a98e6c321a2643b8ded9d4c2b6e8987459f",
             resource_schema_url="https://raw.githubusercontent.com/NII-cloud-operation/CoursewareHub-LC_platform/" + ("master" if registry else "d08692cfb77cd427dd1fb197d499a26f9d310003") + "/jupyterhub/resources-schema.json"))
-        (results / "construction-summary.json").write_text(json.dumps({
-            "D01_D05_execution": "passed", "runtime_verification": "pending",
-        }, indent=2) + "\n")
         username = check_coursewarehub(results, "https://coursewarehub.test", email,
-                            os.environ["CWH_TEST_ADMIN_PASSWORD"], args.manager_container,
-                            args.worker_container, build_repository=build_repository)
+                            os.environ["CWH_TEST_ADMIN_PASSWORD"], manager_guest,
+                            worker_guest, build_repository=build_repository)
         check_lti(results / "lti", platform, username)
         if saml:
-            check_saml(results / "saml", saml, username, args.manager_container)
+            check_saml(results / "saml", saml, username, manager_guest)
         execute("O01_CoursewareHubの更新.ipynb", dict(
             hosts_file=str(inventory), target_group=group,
             db_password_env="CWH_TEST_DB_PASSWORD", intermediate_certfile="",
             check_mode_first=False))
         check_coursewarehub(results / "after-update", "https://coursewarehub.test",
                             email, os.environ["CWH_TEST_ADMIN_PASSWORD"],
-                            args.manager_container, args.worker_container, expected_existing=True,
+                            manager_guest, worker_guest, expected_existing=True,
                             build_repository=build_repository)
         check_lti(results / "after-update" / "lti", platform, username)
         if saml:
-            check_saml(results / "after-update" / "saml", saml, username, args.manager_container)
+            check_saml(results / "after-update" / "saml", saml, username, manager_guest)
 
 
 if __name__ == "__main__":
