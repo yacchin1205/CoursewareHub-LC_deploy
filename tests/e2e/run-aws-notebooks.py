@@ -38,6 +38,8 @@ def main():
     (aws_dir / 'credentials').write_text('[default]\naws_access_key_id = testing\naws_secret_access_key = testing\n')
     for file in aws_dir.iterdir():
         file.chmod(0o600)
+    os.environ['AWS_CONFIG_FILE'] = str(aws_dir / 'config')
+    os.environ['AWS_SHARED_CREDENTIALS_FILE'] = str(aws_dir / 'credentials')
     os.environ['CWH_OPERATIONHUB_PASSWORD'] = secrets.token_hex(24)
     cert, key = private / 'ophub.cer', private / 'ophub.key'
     subprocess.run(['openssl', 'req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-days', '2',
