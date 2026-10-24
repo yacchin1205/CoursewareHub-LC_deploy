@@ -232,6 +232,8 @@ def run_case(args, fixtures):
             contents_notebook_path=str(repo / "coursewarehub/D06_CoursewareHubコンテンツの配備.ipynb"),
             deploy_repo_ref="db991a98e6c321a2643b8ded9d4c2b6e8987459f",
             resource_schema_url="https://raw.githubusercontent.com/NII-cloud-operation/CoursewareHub-LC_platform/" + ("master" if registry else "d08692cfb77cd427dd1fb197d499a26f9d310003") + "/jupyterhub/resources-schema.json"))
+        if registry:
+            registry.check_proxy(manager_guest, "https://coursewarehub.test", results)
         username = check_coursewarehub(results, "https://coursewarehub.test", email,
                             os.environ["CWH_TEST_ADMIN_PASSWORD"], manager_guest,
                             worker_guest, build_repository=build_repository)
@@ -245,6 +247,9 @@ def run_case(args, fixtures):
             hosts_file=str(inventory), target_group=group,
             db_password_env="CWH_TEST_DB_PASSWORD", intermediate_certfile="",
             check_mode_first=False))
+        if registry:
+            (results / "after-update").mkdir(parents=True, exist_ok=True)
+            registry.check_proxy(manager_guest, "https://coursewarehub.test", results / "after-update")
         check_coursewarehub(results / "after-update", "https://coursewarehub.test",
                             email, os.environ["CWH_TEST_ADMIN_PASSWORD"],
                             manager_guest, worker_guest, expected_existing=True,

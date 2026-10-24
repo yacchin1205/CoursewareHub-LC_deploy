@@ -33,6 +33,27 @@ class RegistryFixture:
                      "Accept": "application/vnd.docker.distribution.manifest.v2+json"})
         return urllib.request.urlopen(request, timeout=10)
 
+    def check_proxy(self, manager, base_url, results):
+        import ssl
+        certificate = manager.output(["cat", "/etc/jupyterhub/nginx/certs/auth-proxy.chained.cer"])
+        tls = ssl.create_default_context(cadata=certificate)
+        url = base_url.rstrip("/") + ":5000/v2/"
+        def request(password):
+            auth = base64.b64encode((self.username + ":" + password).encode()).decode()
+            return urllib.request.urlopen(urllib.request.Request(url,
+                headers={"Authorization": "Basic " + auth}), context=tls, timeout=30)
+        with request(self.password) as response:
+            assert response.status == 200
+        try:
+            request("wrong-password")
+        except urllib.error.HTTPError as error:
+            assert error.code == 401, error.code
+        else:
+            raise AssertionError("Registry TLS proxy accepted an invalid password")
+        Path(results, "registry-proxy-results.json").write_text(json.dumps({
+            "provided_certificate_and_tls_proxy": "passed", "wrong_password_rejected": "passed",
+        }, indent=2) + "\n")
+
     def seed(self, manager, worker, source_image):
         run(["docker", "exec", manager, "docker", "pull", source_image])
         image = self.host + "/" + self.initial_image

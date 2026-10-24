@@ -31,7 +31,7 @@ cleanup() {
   timeout 20s ssh -F "$private_dir/ssh_config" "centos@$worker_ip" 'sudo systemctl stop docker containerd; sudo umount -lf /jupyter /exchange'
   for node in worker master; do
     if [[ -f "$private_dir/$node.pid" ]]; then
-      guest_pid=$(cat "$private_dir/$node.pid")
+      guest_pid=$(sudo cat "$private_dir/$node.pid")
       sudo kill "$guest_pid"
       for attempt in $(seq 1 10); do
         sudo kill -0 "$guest_pid" 2>/dev/null || break
@@ -119,14 +119,16 @@ ethernets:
     set-name: eth0
     addresses: [$address/24]
     routes:
-      - to: default
+      - to: 0.0.0.0/0
         via: $gateway
     nameservers:
       addresses: [1.1.1.1, 8.8.8.8]
 EOF
   printf 'instance-id: cwh-e2e-%s\nlocal-hostname: cwh-vm-%s\n' "$node" "$node" > "$private_dir/$node-meta.yml"
   cloud-localds --network-config="$private_dir/$node-network.yml" "$private_dir/$node-seed.iso" "$private_dir/$node-user.yml" "$private_dir/$node-meta.yml"
-  sudo qemu-system-x86_64 -machine "q35,accel=$accel" -cpu "$cpu" -m 2048 -smp 1 \
+  memory=2048
+  [[ "$node" == worker ]] && memory=4096
+  sudo qemu-system-x86_64 -machine "q35,accel=$accel" -cpu "$cpu" -m "$memory" -smp 1 \
     -display none -monitor none -serial "file:$result_dir/$node-console.log" \
     -drive "file=$private_dir/$node.qcow2,if=virtio,format=qcow2" \
     -drive "file=$private_dir/$node-seed.iso,if=virtio,format=raw,readonly=on" \
