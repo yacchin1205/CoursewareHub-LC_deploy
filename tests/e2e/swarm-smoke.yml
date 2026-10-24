@@ -1,0 +1,29 @@
+version: '3.8'
+services:
+  worker-http:
+    image: busybox:1.37.0
+    command:
+      - sh
+      - -ec
+      - 'printf "swarm-worker-shared-volume-ok\n" > /ci-shared/probe.txt; exec httpd -f -p 8080 -h /ci-shared'
+    volumes:
+      - /ci-shared:/ci-shared
+    networks: [backend]
+    deploy:
+      placement:
+        constraints: [node.role == worker]
+  gateway:
+    image: busybox:1.37.0
+    command:
+      - sh
+      - -ec
+      - 'mkdir -p /www; for i in $$(seq 1 60); do if wget -T 2 -qO /www/index.html http://worker-http:8080/probe.txt; then exec httpd -f -p 8081 -h /www; fi; sleep 2; done; exit 1'
+    ports:
+      - '8081:8081'
+    networks: [backend]
+    deploy:
+      placement:
+        constraints: [node.role == manager]
+networks:
+  backend:
+    driver: overlay
