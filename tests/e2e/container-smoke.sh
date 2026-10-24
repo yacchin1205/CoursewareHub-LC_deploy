@@ -73,7 +73,7 @@ for attempt in $(seq 1 30); do
 done
 [[ "$ready" == true ]] || { echo 'Both Swarm nodes must be Ready/Active'; exit 1; }
 
-docker cp tests/e2e/swarm-smoke.yml "$manager:/tmp/swarm-smoke.yml"
+docker exec -i "$manager" sh -c 'cat > /tmp/swarm-smoke.yml' < tests/e2e/swarm-smoke.yml
 docker exec "$manager" docker stack deploy --resolve-image never -c /tmp/swarm-smoke.yml smoke
 
 ready=false
