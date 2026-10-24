@@ -50,7 +50,7 @@ def main():
     with ExitStack() as fixtures:
         provider = fixtures.enter_context(running_aws_provider(bindings, results / 'aws-api', args.gateway))
         parameters = dict(
-            cloudformation_stack_name='ci_operationhub', resource_prefix='ci-operationhub',
+            cloudformation_stack_name='ci-operationhub', resource_prefix='ci-operationhub',
             image_id=provider['image_id'], aws_endpoint_url=provider['endpoint'],
             construction_parameters_confirmed=True, admin_credentials_confirmed=True,
             ssh_private_key_path=str(private / 'operationhub-key'), known_hosts_path=str(private / 'known_hosts'),
@@ -77,11 +77,12 @@ def main():
         subprocess.run(['sudo', 'tee', '-a', '/etc/hosts'], input='\n10.1.1.9 operationhub.test\n', text=True, check=True)
         hosts = check_operationhub(results / 'operationhub', 'https://operationhub.test', 'ohadmin',
             os.environ['CWH_OPERATIONHUB_PASSWORD'], dict(
-                cloudformation_stack_name='ci_nfs', resource_prefix='ci-coursewarehub',
+                cloudformation_stack_name='cinfs', resource_prefix='ci-coursewarehub',
                 image_id=provider['image_id'], aws_endpoint_url=provider['endpoint'],
                 slave_instances=1, construction_parameters_confirmed=True, update_hosts_inventory=True,
                 controller_public_ip=args.gateway, allow_cluster_internal_traffic=True, boot_wait_seconds=0))
         assert all(binding.instance_id for binding in bindings), [(b.role, b.instance_id) for b in bindings]
+        hosts = hosts.replace('[cinfs]', '[ci_nfs]')
         # The controller uses its separately pinned fixture SSH identity for acceptance checks.
         hosts = re.sub(r'ansible_ssh_private_key_file=\S+',
                        'ansible_ssh_private_key_file=' + str(private / 'id_ed25519'), hosts)

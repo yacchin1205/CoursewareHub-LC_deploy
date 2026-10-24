@@ -75,7 +75,7 @@ def check_operationhub(results, base_url, username, password, aws_parameters):
             page.evaluate('() => Jupyter.notebook.save_notebook()')
             passed('the deployed AWS D01 construction Notebook ran in the OperationHub user kernel')
             hosts = fetch(prefix + 'api/contents/hosts')['content']
-            assert '[ci_nfs]' in hosts, hosts
+            assert '[' + aws_parameters['cloudformation_stack_name'] + ']' in hosts, hosts
             probe = nbformat.v4.new_notebook(cells=[nbformat.v4.new_code_cell(
                 'import os\nassert os.getuid() > 0\nprint("OPHUB_KERNEL", os.getuid(), 6 * 7)')])
             fetch(prefix + 'api/contents/e2e-operationhub.ipynb', 'PUT',
