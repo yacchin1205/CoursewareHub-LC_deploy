@@ -15,6 +15,7 @@ import papermill as pm
 import yaml
 from coursewarehub_ui import check_coursewarehub
 from guest import Guest
+from student_ui import register_student, check_student
 from lti_platform import running_platform, check_lti
 from registry_fixture import running_registry, running_build_repository
 from saml_provider import running_provider, check_saml
@@ -208,6 +209,8 @@ def run_case(args, fixtures):
                     input=f"\n{master} coursewarehub.test\n", text=True, check=True)
     os.environ["CWH_TEST_DB_PASSWORD"] = secrets.token_hex(24)
     os.environ["CWH_TEST_ADMIN_PASSWORD"] = secrets.token_hex(24)
+    student_email = "cistudent@example.test"
+    student_password = secrets.token_hex(24)
     build_repository = None
     if registry:
         registry.seed(args.manager_container, args.worker_container, "niicloudoperation/notebook")
@@ -235,6 +238,9 @@ def run_case(args, fixtures):
         check_lti(results / "lti", platform, username)
         if saml:
             check_saml(results / "saml", saml, username, manager_guest)
+        register_student(manager_guest, student_email, student_password)
+        check_student(results / "student", "https://coursewarehub.test", student_email,
+                      student_password, manager_guest, built_image=build_repository is not None)
         execute("O01_CoursewareHubの更新.ipynb", dict(
             hosts_file=str(inventory), target_group=group,
             db_password_env="CWH_TEST_DB_PASSWORD", intermediate_certfile="",
@@ -243,6 +249,9 @@ def run_case(args, fixtures):
                             email, os.environ["CWH_TEST_ADMIN_PASSWORD"],
                             manager_guest, worker_guest, expected_existing=True,
                             build_repository=build_repository)
+        check_student(results / "after-update" / "student", "https://coursewarehub.test", student_email,
+                      student_password, manager_guest, expected_existing=True,
+                      built_image=build_repository is not None)
         check_lti(results / "after-update" / "lti", platform, username)
         if saml:
             check_saml(results / "after-update" / "saml", saml, username, manager_guest)

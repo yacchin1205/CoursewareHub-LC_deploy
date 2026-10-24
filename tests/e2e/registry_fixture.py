@@ -149,9 +149,17 @@ def build_environment(page, base_url, repository, results, manager):
         page.goto(base_url + "/services/environments/")
         row = page.locator('tr.image-row[data-image="' + image_name + '"]')
         if row.locator(".status-col .fa-check-square").is_visible():
+            from playwright.sync_api import expect
+            with page.expect_response(lambda response:
+                    "/api/environments/default-course-image" in response.url
+                    and response.request.method == "PUT", timeout=60000) as selecting:
+                row.locator(".set-default-course-image").check()
+            assert selecting.value.status == 200, selecting.value.text()
+            expect(row.locator(".set-default-course-image")).to_be_checked()
             page.screenshot(path=str(results / "repo2docker-built.png"), full_page=True)
             (results / "repo2docker-results.json").write_text(json.dumps({
                 "repository": repository, "build_and_registry_publication": "passed",
+                "default_course_image_selection": "passed",
             }, indent=2) + "\n")
             return
         containers = run(["docker", "exec", manager, "docker", "ps", "-aq", "--filter",
