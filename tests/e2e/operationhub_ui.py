@@ -26,7 +26,16 @@ def check_operationhub(results, base_url, username, password, aws_parameters):
         context.tracing.start(screenshots=True, snapshots=True, sources=True)
         page = context.new_page()
         try:
-            page.goto(base_url + '/hub/login')
+            for attempt in range(90):
+                try:
+                    page.goto(base_url + '/hub/login', wait_until='domcontentloaded')
+                    if page.locator('#username_input').is_visible():
+                        break
+                except Exception:
+                    pass
+                time.sleep(2)
+            else:
+                raise AssertionError('The constructed OperationHub login form did not become ready')
             page.locator('#username_input').fill(username)
             page.locator('#password_input').fill(password)
             page.locator('#login_submit').click()
