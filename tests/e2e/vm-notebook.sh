@@ -132,6 +132,8 @@ EOF
     -drive "file=$private_dir/$node-seed.iso,if=virtio,format=raw,readonly=on" \
     -netdev "tap,id=net0,ifname=$tap,script=no,downscript=no" \
     -device "virtio-net-pci,netdev=net0,mac=$mac" -daemonize -pidfile "$private_dir/$node.pid"
+  sudo chown "$(id -u):$(id -g)" "$result_dir/$node-console.log"
+  chmod 0644 "$result_dir/$node-console.log"
 done
 for node in master worker; do
   address=$manager_ip

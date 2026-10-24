@@ -1,0 +1,48 @@
+name: VM Notebook E2E
+
+on:
+  push:
+    branches: [feature/e2e-test]
+    paths:
+      - '.github/workflows/e2e-vm.yml'
+      - '.github/actions/setup-coursewarehub-tests/**'
+      - 'tests/e2e/**'
+      - 'coursewarehub/**'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: vm-notebook-e2e-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  vm:
+    if: github.repository == 'yacchin1205/CoursewareHub-LC_deploy'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-coursewarehub-tests
+      - name: Install QEMU and make room for guest disks
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y qemu-system-x86 qemu-utils cloud-image-utils
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc
+          df -h
+      - name: Build CoursewareHub with OS reboot, SELinux, and Compose v1
+        run: bash tests/e2e/vm-notebook.sh
+      - name: Prepare VM evidence permissions
+        if: always()
+        run: |
+          if [[ -d test-results/vm-notebook ]]; then
+            sudo chown -R "$(id -u):$(id -g)" test-results/vm-notebook
+          fi
+      - name: Save VM evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: vm-notebook-evidence
+          path: test-results/vm-notebook/
+          if-no-files-found: warn
+          retention-days: 7
