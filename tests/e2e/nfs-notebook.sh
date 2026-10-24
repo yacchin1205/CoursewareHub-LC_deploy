@@ -14,21 +14,21 @@ cleanup() {
   trap - EXIT
   set +e
   for node in "$manager" "$worker"; do
-    docker logs "$node" > "$result_dir/$node.log" 2>&1
-    docker exec "$node" journalctl --no-pager > "$result_dir/$node-journal.txt" 2>&1
-    docker exec "$node" systemctl --failed --no-pager > "$result_dir/$node-services.txt" 2>&1
-    docker exec "$node" findmnt > "$result_dir/$node-mounts.txt" 2>&1
-    docker exec "$node" cat /etc/fstab > "$result_dir/$node-fstab.txt" 2>&1
-    docker exec "$node" docker info > "$result_dir/$node-docker.txt" 2>&1
+    timeout 10s docker logs "$node" > "$result_dir/$node.log" 2>&1
+    timeout 10s docker exec "$node" journalctl --no-pager > "$result_dir/$node-journal.txt" 2>&1
+    timeout 10s docker exec "$node" systemctl --failed --no-pager > "$result_dir/$node-services.txt" 2>&1
+    timeout 10s docker exec "$node" findmnt > "$result_dir/$node-mounts.txt" 2>&1
+    timeout 10s docker exec "$node" cat /etc/fstab > "$result_dir/$node-fstab.txt" 2>&1
+    timeout 10s docker exec "$node" docker info > "$result_dir/$node-docker.txt" 2>&1
   done
-  docker exec "$manager" exportfs -v > "$result_dir/exports.txt" 2>&1
-  docker exec "$manager" docker node ls > "$result_dir/swarm-nodes.txt" 2>&1
-  docker exec "$manager" docker stack ps smoke --no-trunc > "$result_dir/swarm-tasks.txt" 2>&1
-  docker exec "$manager" docker service logs smoke_gateway > "$result_dir/swarm-gateway.log" 2>&1
-  docker exec "$manager" docker service logs smoke_worker-http > "$result_dir/swarm-worker.log" 2>&1
-  docker exec "$manager" docker stack ps coursewarehub --no-trunc > "$result_dir/coursewarehub-tasks.txt" 2>&1
-  for service in auth-proxy jupyterhub postgres; do
-    docker exec "$manager" docker service logs "coursewarehub_$service" > "$result_dir/coursewarehub-$service.log" 2>&1
+  timeout 10s docker exec "$manager" exportfs -v > "$result_dir/exports.txt" 2>&1
+  timeout 10s docker exec "$manager" docker node ls > "$result_dir/swarm-nodes.txt" 2>&1
+  timeout 10s docker exec "$manager" docker stack ps smoke --no-trunc > "$result_dir/swarm-tasks.txt" 2>&1
+  timeout 10s docker exec "$manager" docker service logs smoke_gateway > "$result_dir/swarm-gateway.log" 2>&1
+  timeout 10s docker exec "$manager" docker service logs smoke_worker-http > "$result_dir/swarm-worker.log" 2>&1
+  timeout 10s docker exec "$manager" docker stack ps coursewarehub --no-trunc > "$result_dir/coursewarehub-tasks.txt" 2>&1
+  for service in jupyterhub auth-proxy postgres; do
+    timeout 10s docker exec "$manager" docker service logs "coursewarehub_$service" > "$result_dir/coursewarehub-$service.log" 2>&1
   done
   if service_ids=$(timeout 10s docker exec "$manager" docker service ls -q 2>"$result_dir/service-list-error.txt"); then
     while read -r service_id; do
@@ -44,9 +44,9 @@ cleanup() {
   timeout 15s docker rm -f "$worker"
   timeout 30s docker stop -t 15 "$manager"
   timeout 15s docker rm -f "$manager"
-  docker network rm "$network"
-  docker volume rm "$volume"
-  docker volume rm "$manager-docker" "$worker-docker"
+  timeout 10s docker network rm "$network"
+  timeout 10s docker volume rm "$volume"
+  timeout 10s docker volume rm "$manager-docker" "$worker-docker"
   rm -rf "$private_dir"
   printf 'Experiment exit status: %s\n' "$result" > "$result_dir/result.txt"
   exit "$result"
