@@ -144,7 +144,7 @@ for node in master worker; do
   for attempt in $(seq 1 180); do
     if ssh-keyscan -T 2 -t ed25519 "$address" > "$private_dir/scanned-key" 2>/dev/null && [[ -s "$private_dir/scanned-key" ]]; then
       fingerprint=$(ssh-keygen -lf "$private_dir/scanned-key" -E sha256 | awk '{print $2}')
-      if rg -Fq "$fingerprint" "$result_dir/$node-console.log"; then
+      if grep -Fq -- "$fingerprint" "$result_dir/$node-console.log"; then
         cat "$private_dir/scanned-key" >> "$private_dir/known_hosts"
         if timeout 90s ssh -F "$private_dir/ssh_config" "centos@$address" 'sudo cloud-init status --wait'; then ready=true; break; fi
       fi
