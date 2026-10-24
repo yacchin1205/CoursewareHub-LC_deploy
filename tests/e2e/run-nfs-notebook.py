@@ -46,7 +46,7 @@ def main():
     def execute(name, parameters):
         pm.execute_notebook(str(repo / "coursewarehub" / name), str(results / name),
                             parameters=parameters, cwd=str(work), kernel_name="python3",
-                            execution_timeout=600)
+                            execution_timeout=600, log_output=True)
 
     execute("D01_オンプレミス環境の場合のマシン設定.ipynb",
             dict(inventory_path=str(hosts), target_group=group))
