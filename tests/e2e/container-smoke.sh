@@ -9,7 +9,8 @@ manager=cwh-smoke-manager
 worker=cwh-smoke-worker
 network=cwh-smoke-network
 volume=cwh-smoke-shared
-node_image=docker:27.5.1-dind
+node_image=cwh-smoke-node:local
+private_dir=$(mktemp -d)
 
 collect_and_cleanup() {
   result=$?
@@ -19,6 +20,7 @@ collect_and_cleanup() {
     docker logs "$node" > "$result_dir/$node.log" 2>&1
     docker exec "$node" docker info > "$result_dir/$node-info.txt" 2>&1
     docker exec "$node" docker ps -a > "$result_dir/$node-containers.txt" 2>&1
+    docker exec "$node" cat /tmp/sshd.log > "$result_dir/$node-sshd.log" 2>&1
   done
   docker exec "$manager" docker node ls > "$result_dir/nodes.txt" 2>&1
   docker exec "$manager" docker stack ps smoke --no-trunc > "$result_dir/tasks.txt" 2>&1
@@ -27,12 +29,26 @@ collect_and_cleanup() {
   docker rm -f "$manager" "$worker"
   docker network rm "$network"
   docker volume rm "$volume"
+  rm -rf "$private_dir"
   printf 'Experiment exit status: %s\n' "$result" > "$result_dir/result.txt"
   exit "$result"
 }
 trap collect_and_cleanup EXIT
 
 docker version
+docker build -t "$node_image" tests/e2e/node
+ssh-keygen -q -t ed25519 -N '' -f "$private_dir/id_ed25519"
+touch "$private_dir/known_hosts"
+cat > "$private_dir/ssh_config" <<EOF
+Host *
+  BatchMode yes
+  StrictHostKeyChecking yes
+  UserKnownHostsFile $private_dir/known_hosts
+  IdentityFile $private_dir/id_ed25519
+  IdentitiesOnly yes
+EOF
+export ANSIBLE_SSH_ARGS="-F $private_dir/ssh_config"
+export ANSIBLE_NOCOLOR=1
 docker network create "$network"
 docker volume create "$volume"
 for node in "$manager" "$worker"; do
@@ -42,6 +58,7 @@ for node in "$manager" "$worker"; do
   fi
   docker run -d --privileged --name "$node" --hostname "$node" \
     --network "$network" -e DOCKER_TLS_CERTDIR= \
+    -v "$private_dir/id_ed25519.pub:/run/ci-authorized-key:ro" \
     -v "$volume:/ci-shared" "${port_args[@]}" "$node_image"
   ready=false
   for attempt in $(seq 1 60); do
@@ -57,6 +74,14 @@ done
 
 manager_ip=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "$manager")
 worker_ip=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "$worker")
+for node in "$manager" "$worker"; do
+  node_ip=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "$node")
+  host_key=$(docker exec "$node" cat /etc/ssh/ssh_host_ed25519_key.pub)
+  printf '%s %s\n' "$node_ip" "$host_key" >> "$private_dir/known_hosts"
+done
+python tests/e2e/run-notebook-smoke.py --result-dir "$result_dir" \
+  --key "$private_dir/id_ed25519" --manager-ip "$manager_ip" --worker-ip "$worker_ip"
+
 docker exec "$manager" docker swarm init --advertise-addr "$manager_ip" >/dev/null
 token=$(docker exec "$manager" docker swarm join-token -q worker)
 docker exec "$worker" docker swarm join --token "$token" --advertise-addr "$worker_ip" "$manager_ip:2377"
