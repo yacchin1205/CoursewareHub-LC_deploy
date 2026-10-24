@@ -42,14 +42,16 @@ def check_student(results, base_url, email, password, manager, *, expected_exist
 
             def request(path, method='GET', body=None):
                 return page.evaluate("""async ({path, method, body}) => {
-                    const token = document.cookie.match(/(?:^|; )_xsrf=([^;]*)/);
+                    const cookie = document.cookie.match(/(?:^|; )_xsrf=([^;]*)/);
+                    const token = (window.jhdata && window.jhdata.xsrf_token) || (cookie ? decodeURIComponent(cookie[1]) : '');
                     const r = await fetch(path, {method, headers: {
                         'Content-Type': 'application/json',
-                        'X-XSRFToken': token ? decodeURIComponent(token[1]) : ''},
+                        'X-XSRFToken': token},
                         body: body === null ? undefined : JSON.stringify(body)});
                     return {status: r.status, text: await r.text()};
                 }""", dict(path=path, method=method, body=body))
 
+            page.goto(base_url + '/hub/home')
             result = request('/hub/api/user')
             assert result['status'] == 200, result
             user = json.loads(result['text'])

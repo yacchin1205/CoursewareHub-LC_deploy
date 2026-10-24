@@ -239,10 +239,12 @@ def check_saml(results, provider, expected_username, manager):
                         location.pathname === '/no_author' || location.pathname === '/php/sp.php'""", timeout=60000)
                     if mode == 'valid':
                         page.wait_for_function("location.pathname.startsWith('/hub/') || location.pathname.startsWith('/user/')", timeout=120000)
+                        page.goto(provider.tool_url + "/hub/home")
                         user = page.evaluate("""async () => {
-                            const token = document.cookie.match(/(?:^|; )_xsrf=([^;]*)/);
+                            const cookie = document.cookie.match(/(?:^|; )_xsrf=([^;]*)/);
+                    const token = (window.jhdata && window.jhdata.xsrf_token) || (cookie ? decodeURIComponent(cookie[1]) : '');
                             const r = await fetch('/hub/api/user', {headers: {
-                                'X-XSRFToken': token ? decodeURIComponent(token[1]) : ''}});
+                                'X-XSRFToken': token}});
                             return {status: r.status, text: await r.text()};
                         }""")
                         assert user['status'] == 200, user

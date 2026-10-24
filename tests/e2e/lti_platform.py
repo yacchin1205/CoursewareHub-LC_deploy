@@ -178,10 +178,12 @@ def check_lti(results, platform, expected_username):
                     if mode == "valid":
                         assert response.status < 400, response.text()
                         page.wait_for_function("location.pathname.startsWith('/hub/') || location.pathname.startsWith('/user/')", timeout=120000)
+                        page.goto(platform.tool_url + "/hub/home")
                         user = page.evaluate("""async () => {
-                            const token = document.cookie.match(/(?:^|; )_xsrf=([^;]*)/);
+                            const cookie = document.cookie.match(/(?:^|; )_xsrf=([^;]*)/);
+                    const token = (window.jhdata && window.jhdata.xsrf_token) || (cookie ? decodeURIComponent(cookie[1]) : '');
                             const response = await fetch('/hub/api/user', {headers: {
-                                'X-XSRFToken': token ? decodeURIComponent(token[1]) : ''}});
+                                'X-XSRFToken': token}});
                             return {status: response.status, text: await response.text()};
                         }""")
                         assert user["status"] == 200, user

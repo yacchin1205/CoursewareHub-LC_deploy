@@ -42,10 +42,12 @@ def check_coursewarehub(results, base_url, email, password, manager, worker, *, 
             page.locator('input[name="password"]').fill(password)
             page.locator('input[type="submit"], button[type="submit"]').click()
             page.wait_for_function("location.pathname.startsWith('/hub/') || location.pathname.startsWith('/user/')", timeout=120000)
+            page.goto(base_url + "/hub/home")
             user_response = page.evaluate("""async () => {
-                const token = document.cookie.match(/(?:^|; )_xsrf=([^;]*)/);
+                const cookie = document.cookie.match(/(?:^|; )_xsrf=([^;]*)/);
+                    const token = (window.jhdata && window.jhdata.xsrf_token) || (cookie ? decodeURIComponent(cookie[1]) : '');
                 const response = await fetch('/hub/api/user', {headers: {
-                    'X-XSRFToken': token ? decodeURIComponent(token[1]) : ''
+                    'X-XSRFToken': token
                 }});
                 return {status: response.status, text: await response.text()};
             }""")
@@ -75,10 +77,11 @@ def check_coursewarehub(results, base_url, email, password, manager, worker, *, 
 
             def user_fetch(path, method="GET", body=None):
                 result = page.evaluate("""async ({path, method, body}) => {
-                    const token = document.cookie.match(/(?:^|; )_xsrf=([^;]*)/);
+                    const cookie = document.cookie.match(/(?:^|; )_xsrf=([^;]*)/);
+                    const token = (window.jhdata && window.jhdata.xsrf_token) || (cookie ? decodeURIComponent(cookie[1]) : '');
                     const response = await fetch(path, {
                         method, headers: {'Content-Type': 'application/json',
-                        'X-XSRFToken': token ? decodeURIComponent(token[1]) : ''},
+                        'X-XSRFToken': token},
                         body: body === null ? undefined : JSON.stringify(body)
                     });
                     return {status: response.status, text: await response.text()};
