@@ -2,6 +2,6 @@ FROM niicloudoperation/notebook
 
 USER root
 
-RUN mamba install --quiet --yes awscli passlib && mamba clean --all -f -y
+RUN python3 -m pip install --no-cache-dir awscli passlib
 
 USER $NB_USER
