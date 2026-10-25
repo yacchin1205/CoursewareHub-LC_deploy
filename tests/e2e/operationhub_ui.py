@@ -76,10 +76,12 @@ def check_operationhub(results, base_url, username, password, aws_parameters):
             page.goto(base_url + prefix + 'notebooks/' + quote(name))
             page.wait_for_function('window.Jupyter && Jupyter.notebook && Jupyter.notebook.kernel && Jupyter.notebook.kernel.is_connected()')
             page.evaluate('() => Jupyter.notebook.execute_all_cells()')
-            page.wait_for_function('''() => Jupyter.notebook.get_cells()
-                .filter(c => c.cell_type === 'code' && c.get_text().trim())
-                .every(c => c.input_prompt_number !== '*' && c.input_prompt_number !== null
-                    && c.input_prompt_number !== undefined)''', timeout=900000)
+            page.wait_for_function('''() => {
+                const cells = Jupyter.notebook.get_cells().filter(c => c.cell_type === 'code' && c.get_text().trim());
+                return cells.some(c => c.output_area && c.output_area.outputs.some(o => o.output_type === 'error')) ||
+                    cells.every(c => c.input_prompt_number !== '*' && c.input_prompt_number !== null
+                        && c.input_prompt_number !== undefined);
+            }''', timeout=900000)
             document = page.evaluate('() => Jupyter.notebook.toJSON()')
             (results / name).write_text(json.dumps(document, ensure_ascii=False, indent=1) + '\n')
             errors = [o for c in document['cells'] for o in c.get('outputs', []) if o['output_type'] == 'error']
