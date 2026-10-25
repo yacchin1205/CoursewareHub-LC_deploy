@@ -1,0 +1,43 @@
+name: CoursewareHub | Moodle LTI launch, use and update
+
+on:
+  push:
+    branches: [feature/e2e-test]
+    paths:
+      - '.github/workflows/e2e-moodle.yml'
+      - '.github/actions/setup-coursewarehub-tests/**'
+      - 'tests/e2e/**'
+      - 'tests/notebooks/requirements.txt'
+      - 'coursewarehub/**'
+      - '!coursewarehub/D01_CoursewareHub用VMをAWSに作成.ipynb'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: coursewarehub-moodle-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  coursewarehub:
+    name: Moodle course to CoursewareHub | Teacher and student, before and after O01
+    if: github.repository == 'yacchin1205/CoursewareHub-LC_deploy'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 75
+    env:
+      CWH_E2E_PLATFORM: moodle
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-coursewarehub-tests
+      - name: Make room for Moodle and CoursewareHub images
+        run: sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc
+      - name: Construct CoursewareHub and verify Moodle LTI launches, execution and persistence across O01
+        run: bash tests/e2e/coursewarehub-container.sh
+      - name: Save construction, Moodle launch and runtime evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coursewarehub-moodle
+          path: test-results/coursewarehub-container/
+          if-no-files-found: warn
+          retention-days: 7

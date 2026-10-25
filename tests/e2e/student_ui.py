@@ -99,6 +99,7 @@ def check_student(results, base_url, email, password, manager, *, expected_exist
             (results / 'student-executed.ipynb').write_text(json.dumps(json.loads(saved['text'])['content'], indent=1) + '\n')
             page.screenshot(path=str(results / 'student-executed.png'), full_page=True)
             passed('student executed and saved a Notebook as the correct UID without passwordless sudo')
+            return username
         except Exception as exception:
             error = str(exception)
             page.screenshot(path=str(results / 'student-failure.png'), full_page=True)

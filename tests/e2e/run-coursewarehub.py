@@ -38,7 +38,7 @@ def main():
     parser.add_argument("--worker-ip", required=True)
     parser.add_argument("--worker-container", required=True)
     parser.add_argument("--manager-container", required=True)
-    parser.add_argument("--case", choices=["legacy-2024", "current-registry", "federation", "vm-os"], default="legacy-2024")
+    parser.add_argument("--case", choices=["legacy-2024", "current-registry", "federation", "vm-os", "moodle"], default="legacy-2024")
     parser.add_argument("--network")
     parser.add_argument("--transport", choices=["docker", "ssh"], default="docker")
     parser.add_argument("--gateway")
@@ -69,6 +69,11 @@ def run_case(args, fixtures):
         saml = fixtures.enter_context(running_provider("http://" + gateway + ":18501", "https://coursewarehub.test", email))
         saml_metadata = results / "idp-metadata.xml"
         saml_metadata.write_bytes(saml.metadata())
+    moodle = None
+    if args.case == "moodle":
+        from moodle_fixture import running_moodle
+        from moodle_ui import check_moodle
+        moodle = fixtures.enter_context(running_moodle(gateway, args.network, results / "moodle-platform"))
     group = "ci_nfs"
     master, worker = args.manager_ip, args.worker_ip
     key = str(args.key.resolve())
@@ -229,7 +234,8 @@ def run_case(args, fixtures):
             cgidp_metadata=str(saml_metadata) if saml_metadata else None,
             generate_self_signed_cert=True, check_mode_first=args.transport == "ssh",
             configure_selinux=args.transport == "ssh",
-            legacy_singleuser_profile=registry is None, lti_config=platform.registration,
+            legacy_singleuser_profile=registry is None,
+            lti_config={**platform.registration, **moodle.registration} if moodle else platform.registration,
             registry_host=registry.host if registry else "",
             registry_password_env="CWH_TEST_REGISTRY_PASSWORD" if registry else None,
             registry_insecure=registry is not None,
@@ -247,8 +253,12 @@ def run_case(args, fixtures):
         if saml:
             check_saml(results / "saml", saml, username, manager_guest)
         register_student(manager_guest, student_email, student_password)
-        check_student(results / "student", "https://coursewarehub.test", student_email,
+        student_username = check_student(results / "student", "https://coursewarehub.test", student_email,
                       student_password, manager_guest, built_image=build_repository is not None)
+        if moodle:
+            moodle.register_tool_key(manager_guest)
+            check_moodle(results / "moodle", moodle, manager_guest,
+                         {"teacher": username, "student": student_username})
         execute("O01_CoursewareHubの更新.ipynb", dict(
             hosts_file=str(inventory), target_group=group,
             db_password_env="CWH_TEST_DB_PASSWORD", intermediate_certfile="",
@@ -264,6 +274,9 @@ def run_case(args, fixtures):
                       student_password, manager_guest, expected_existing=True,
                       built_image=build_repository is not None)
         check_lti(results / "after-update" / "lti", platform, username)
+        if moodle:
+            check_moodle(results / "after-update" / "moodle", moodle, manager_guest,
+                         {"teacher": username, "student": student_username}, expected_existing=True)
         if saml:
             check_saml(results / "after-update" / "saml", saml, username, manager_guest)
 
