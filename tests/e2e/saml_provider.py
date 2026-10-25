@@ -9,7 +9,7 @@ from pathlib import Path
 import subprocess
 import tempfile
 import threading
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, urlencode, urlparse
 import uuid
 import zlib
 
@@ -234,8 +234,16 @@ def check_saml(results, provider, expected_username, manager):
                 checks.append(record)
                 try:
                     page.goto(provider.tool_url + '/php/sp.php')
-                    # A single IdP may be selected automatically by SimpleSAMLphp.
-                    if page.locator('select[name="idpentityid"]').count():
+                    discovery = parse_qs(urlparse(page.url).query)
+                    if 'return' in discovery and 'returnIDParam' in discovery:
+                        # Select the fixture through the SP-issued Discovery response URL.
+                        return_url = discovery['return'][0]
+                        target, origin = urlparse(return_url), urlparse(provider.tool_url)
+                        assert (target.scheme, target.netloc) == (origin.scheme, origin.netloc), return_url
+                        separator = '&' if '?' in return_url else '?'
+                        page.goto(return_url + separator + urlencode({
+                            discovery['returnIDParam'][0]: provider.entity_id}))
+                    elif page.locator('select[name="idpentityid"]').count():
                         page.locator('select[name="idpentityid"]').select_option(provider.entity_id)
                         page.locator('button[type="submit"]').click()
                     page.wait_for_function("""() => location.pathname.startsWith('/hub/') ||
@@ -259,6 +267,7 @@ def check_saml(results, provider, expected_username, manager):
                     else:
                         assert not urlparse(page.url).path.startswith(('/hub/', '/user/')), page.url
                         page.screenshot(path=str(results / (mode + '-rejected.png')), full_page=True)
+                        (results / (mode + '-rejected.html')).write_text(page.content())
                         page.goto(provider.tool_url + '/hub/home')
                         page.locator('input[name="email"]').wait_for(state='visible', timeout=30000)
                     assert {'endpoint': 'sso', 'mode': mode} in provider.requests, provider.requests
