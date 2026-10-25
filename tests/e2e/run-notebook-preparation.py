@@ -1,4 +1,4 @@
-"""Execute repository notebooks against disposable SSH nodes; keep evidence."""
+"""Verify D01 SSH success/failure and D02 inventory against two real SSH/Docker nodes."""
 import argparse
 import json
 import os
@@ -94,7 +94,6 @@ def main():
         "D01_connection": "passed", "D02_inventory": "passed",
         "generated_inventory_ssh_sudo_docker": "passed",
         "D01_connection_failure_propagation": "passed",
-        "not_covered": ["systemd", "NFS", "OS reboot", "D03-D06", "CoursewareHub UI"],
     }, indent=2) + "\n")
     print("PASS: existing D01/D02 notebooks, generated inventory and SSH failure propagation")
 

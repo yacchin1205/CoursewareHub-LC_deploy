@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
-result_dir="${GITHUB_WORKSPACE:-$PWD}/test-results/nfs-notebook"
+result_dir="${GITHUB_WORKSPACE:-$PWD}/test-results/coursewarehub-container"
 mkdir -p "$result_dir"
 exec > >(tee "$result_dir/run.log") 2>&1
 private_dir=$(mktemp -d)
@@ -59,7 +59,7 @@ cleanup() {
   timeout 10s docker volume rm "$volume"
   timeout 10s docker volume rm "$manager-docker" "$worker-docker"
   rm -rf "$private_dir"
-  printf 'Experiment exit status: %s\n' "$result" > "$result_dir/result.txt"
+  printf 'Test exit status: %s\n' "$result" > "$result_dir/result.txt"
   exit "$result"
 }
 trap cleanup EXIT
@@ -109,7 +109,7 @@ for node in "$manager" "$worker"; do
 done
 manager_ip=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "$manager")
 worker_ip=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "$worker")
-python tests/e2e/run-nfs-notebook.py --result-dir "$result_dir" \
+python tests/e2e/run-coursewarehub.py --result-dir "$result_dir" \
   --key "$private_dir/id_ed25519" --manager-ip "$manager_ip" --worker-ip "$worker_ip" \
   --worker-container "$worker" --manager-container "$manager" \
   --network "$network" --case "${CWH_E2E_PLATFORM:-legacy-2024}"

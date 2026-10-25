@@ -87,7 +87,7 @@ def main():
         hosts = re.sub(r'ansible_ssh_private_key_file=\S+',
                        'ansible_ssh_private_key_file=' + str(private / 'id_ed25519'), hosts)
         (results / 'aws-generated-hosts').write_text(hosts)
-        spec = importlib.util.spec_from_file_location('coursewarehub_construction', repo / 'tests/e2e/run-nfs-notebook.py')
+        spec = importlib.util.spec_from_file_location('coursewarehub_construction', repo / 'tests/e2e/run-coursewarehub.py')
         driver = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(driver)
         driver.run_case(SimpleNamespace(result_dir=results / 'coursewarehub', key=private / 'id_ed25519',

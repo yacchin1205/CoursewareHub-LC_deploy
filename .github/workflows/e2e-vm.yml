@@ -1,4 +1,4 @@
-name: VM Notebook E2E
+name: CoursewareHub E2E (VMs)
 
 on:
   push:
@@ -8,11 +8,11 @@ on:
       - '.github/actions/setup-coursewarehub-tests/**'
       - '.github/actions/setup-qemu-guests/**'
       - 'tests/e2e/**'
-      - '!tests/e2e/aws-notebook.sh'
+      - '!tests/e2e/operationhub-coursewarehub.sh'
       - '!tests/e2e/aws_guest_provider.py'
       - '!tests/e2e/operationhub_ui.py'
       - '!tests/e2e/requirements-aws.txt'
-      - '!tests/e2e/run-aws-notebooks.py'
+      - '!tests/e2e/run-operationhub-coursewarehub.py'
       - 'coursewarehub/**'
       - '!coursewarehub/D01_CoursewareHub用VMをAWSに作成.ipynb'
 
@@ -20,11 +20,12 @@ permissions:
   contents: read
 
 concurrency:
-  group: vm-notebook-e2e-${{ github.ref }}
+  group: coursewarehub-vm-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
-  vm:
+  coursewarehub:
+    name: Build, use, update | OS reboot, SELinux, Compose v1
     if: github.repository == 'yacchin1205/CoursewareHub-LC_deploy'
     runs-on: ubuntu-24.04
     timeout-minutes: 90
@@ -32,19 +33,19 @@ jobs:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/setup-coursewarehub-tests
       - uses: ./.github/actions/setup-qemu-guests
-      - name: Build CoursewareHub with OS reboot, SELinux, and Compose v1
-        run: bash tests/e2e/vm-notebook.sh
+      - name: Run D01-D06 with OS reboot and verify CoursewareHub before and after O01
+        run: bash tests/e2e/coursewarehub-vm.sh
       - name: Prepare VM evidence permissions
         if: always()
         run: |
-          if [[ -d test-results/vm-notebook ]]; then
-            sudo chown -R "$(id -u):$(id -g)" test-results/vm-notebook
+          if [[ -d test-results/coursewarehub-vm ]]; then
+            sudo chown -R "$(id -u):$(id -g)" test-results/coursewarehub-vm
           fi
       - name: Save VM evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: vm-notebook-evidence
-          path: test-results/vm-notebook/
+          name: coursewarehub-vm
+          path: test-results/coursewarehub-vm/
           if-no-files-found: warn
           retention-days: 7

@@ -1,4 +1,4 @@
-name: AWS Notebook E2E
+name: OperationHub to CoursewareHub E2E
 
 on:
   push:
@@ -16,11 +16,12 @@ permissions:
   contents: read
 
 concurrency:
-  group: aws-notebook-e2e-${{ github.ref }}
+  group: operationhub-coursewarehub-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
-  aws:
+  operationhub-coursewarehub:
+    name: Build, use, update | AWS API (Moto) + VMs
     if: github.repository == 'yacchin1205/CoursewareHub-LC_deploy'
     runs-on: ubuntu-24.04
     timeout-minutes: 120
@@ -30,19 +31,19 @@ jobs:
       - name: Install local AWS provider
         run: python -m pip install -r tests/e2e/requirements-aws.txt
       - uses: ./.github/actions/setup-qemu-guests
-      - name: Execute AWS construction notebooks and test the constructed services
-        run: bash tests/e2e/aws-notebook.sh
+      - name: Build OperationHub, run AWS D01 in its kernel, verify CoursewareHub before and after O01
+        run: bash tests/e2e/operationhub-coursewarehub.sh
       - name: Prepare evidence permissions
         if: always()
         run: |
-          if [[ -d test-results/aws-notebook ]]; then
-            sudo chown -R "$(id -u):$(id -g)" test-results/aws-notebook
+          if [[ -d test-results/operationhub-coursewarehub ]]; then
+            sudo chown -R "$(id -u):$(id -g)" test-results/operationhub-coursewarehub
           fi
       - name: Save AWS construction and runtime evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: aws-notebook-evidence
-          path: test-results/aws-notebook/
+          name: operationhub-coursewarehub
+          path: test-results/operationhub-coursewarehub/
           if-no-files-found: warn
           retention-days: 7

@@ -1,18 +1,18 @@
-name: Container Swarm and Notebook smoke
+name: Notebook validation and CoursewareHub E2E (containers)
 
 on:
   push:
     branches: [feature/e2e-test]
     paths:
-      - '.github/workflows/e2e-container-smoke.yml'
+      - '.github/workflows/e2e-containers.yml'
       - '.github/actions/setup-coursewarehub-tests/**'
       - 'tests/e2e/**'
-      - '!tests/e2e/aws-notebook.sh'
+      - '!tests/e2e/operationhub-coursewarehub.sh'
       - '!tests/e2e/aws_guest_provider.py'
       - '!tests/e2e/operationhub_ui.py'
       - '!tests/e2e/requirements-aws.txt'
-      - '!tests/e2e/run-aws-notebooks.py'
-      - '!tests/e2e/vm-notebook.sh'
+      - '!tests/e2e/run-operationhub-coursewarehub.py'
+      - '!tests/e2e/coursewarehub-vm.sh'
       - 'coursewarehub/**'
       - '!coursewarehub/D01_CoursewareHub用VMをAWSに作成.ipynb'
 
@@ -20,11 +20,12 @@ permissions:
   contents: read
 
 concurrency:
-  group: container-smoke-${{ github.ref }}
+  group: coursewarehub-containers-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
-  swarm:
+  notebook-preparation:
+    name: On-prem D01 + D02 | SSH validation and inventory generation
     if: github.repository == 'yacchin1205/CoursewareHub-LC_deploy'
     runs-on: ubuntu-24.04
     timeout-minutes: 15
@@ -39,22 +40,29 @@ jobs:
         run: |
           python -m pip install -r tests/e2e/requirements.txt
           python -m ipykernel install --user --name python3
-      - name: Run existing Notebooks and two-node Swarm experiment
-        run: bash tests/e2e/container-smoke.sh
-      - name: Save experiment evidence
+      - name: Run D01/D02 and verify SSH success, SSH rejection and generated inventory
+        run: bash tests/e2e/notebook-preparation.sh
+      - name: Save D01/D02 execution evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: container-swarm-evidence
-          path: test-results/container-smoke/
+          name: notebook-preparation
+          path: test-results/notebook-preparation/
           if-no-files-found: warn
           retention-days: 7
 
-  nfs:
+  coursewarehub:
+    name: Build, use, update | ${{ matrix.scenario }}
     strategy:
       fail-fast: false
       matrix:
-        platform: [legacy-2024, current-registry, federation]
+        include:
+          - platform: legacy-2024
+            scenario: Local authentication (2024 images)
+          - platform: current-registry
+            scenario: Custom image (registry + repo2docker)
+          - platform: federation
+            scenario: Federated authentication (SAML)
     env:
       CWH_E2E_PLATFORM: ${{ matrix.platform }}
     if: github.repository == 'yacchin1205/CoursewareHub-LC_deploy'
@@ -67,13 +75,13 @@ jobs:
         run: |
           sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc
           df -h
-      - name: Build CoursewareHub and test the running service
-        run: bash tests/e2e/nfs-notebook.sh
-      - name: Save NFS experiment evidence
+      - name: Run D01-D05, verify CoursewareHub and D06, update with O01 and verify again
+        run: bash tests/e2e/coursewarehub-container.sh
+      - name: Save construction, runtime and update evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: nfs-notebook-evidence-${{ matrix.platform }}
-          path: test-results/nfs-notebook/
+          name: coursewarehub-${{ matrix.platform }}
+          path: test-results/coursewarehub-container/
           if-no-files-found: warn
           retention-days: 7

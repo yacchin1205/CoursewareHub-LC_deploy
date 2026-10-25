@@ -175,11 +175,11 @@ def run_case(args, fixtures):
         raise AssertionError("D04 did not produce two Ready/Active Swarm nodes")
     for guest in [manager_guest, worker_guest]:
         command(guest.command(["docker", "pull", "busybox:1.37.0"]))
-    stack = yaml.safe_load((repo / "tests/e2e/swarm-smoke.yml").read_text())
+    stack = yaml.safe_load((repo / "tests/e2e/swarm-workload.yml").read_text())
     stack["services"]["worker-http"]["volumes"] = ["/exchange:/ci-shared"]
-    manager_guest.run(["sh", "-c", "cat > /tmp/swarm-smoke.yml"], input=yaml.safe_dump(stack))
+    manager_guest.run(["sh", "-c", "cat > /tmp/swarm-workload.yml"], input=yaml.safe_dump(stack))
     command(manager_guest.command(["docker", "stack", "deploy",
-             "--resolve-image", "never", "-c", "/tmp/swarm-smoke.yml", "smoke"]))
+             "--resolve-image", "never", "-c", "/tmp/swarm-workload.yml", "smoke"]))
     for attempt in range(90):
         try:
             with urllib.request.urlopen(args.probe_url, timeout=3) as response:

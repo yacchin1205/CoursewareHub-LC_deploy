@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
-result_dir="${GITHUB_WORKSPACE:-$PWD}/test-results/aws-notebook"
+result_dir="${GITHUB_WORKSPACE:-$PWD}/test-results/operationhub-coursewarehub"
 mkdir -p "$result_dir"
 exec > >(tee "$result_dir/run.log") 2>&1
 source tests/e2e/qemu-guests.sh
@@ -24,9 +24,9 @@ cleanup() {
   done
   timeout 20s ssh -F "$private_dir/ssh_config" centos@10.1.1.11 'sudo systemctl stop docker containerd; sudo umount -lf /jupyter /exchange'
   qemu_cleanup
-  printf 'Experiment exit status: %s\n' "$result" > "$result_dir/result.txt"
+  printf 'Test exit status: %s\n' "$result" > "$result_dir/result.txt"
   exit "$result"
 }
 trap cleanup EXIT
 qemu_boot_guests 'operationhub:10.1.1.9:4096:50G' 'master:10.1.1.10:2048:100G' 'worker1:10.1.1.11:4096:50G'
-python tests/e2e/run-aws-notebooks.py --result-dir "$result_dir" --private-dir "$private_dir" --gateway "$gateway"
+python tests/e2e/run-operationhub-coursewarehub.py --result-dir "$result_dir" --private-dir "$private_dir" --gateway "$gateway"
