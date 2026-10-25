@@ -34,7 +34,7 @@ class Moodle:
             deployment=[self.metadata['deployment_id']])}
 
     def register_tool_key(self, manager):
-        public = manager.output(['openssl', 'rsa', '-pubout', '-in', '/etc/jupyterhub/lti/private.key'])
+        public = manager.output(['openssl', 'pkey', '-pubout', '-in', '/etc/jupyterhub/lti/private.key'])
         assert public.startswith('-----BEGIN PUBLIC KEY-----'), public
         run(['docker', 'exec', '-i', '-u', 'www-data', 'cwh-moodle', 'php', '/tmp/setup.php',
              'public-key', self.metadata['deployment_id']], input=public)

@@ -16,7 +16,7 @@ permissions:
 
 concurrency:
   group: coursewarehub-moodle-${{ github.ref }}
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   coursewarehub:
