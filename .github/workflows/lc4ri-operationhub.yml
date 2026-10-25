@@ -1,5 +1,7 @@
 name: OperationHub | Construct and use through LC4RI
 on:
+  push:
+    branches: [diagnostic/console-fingerprints]
   pull_request:
     branches: [main]
     paths: ['tests/lc4ri/**', '.github/workflows/lc4ri-operationhub.yml', 'D01_OperationHubをAWSに構築.ipynb', 'image/**', 'coursewarehub/**']

@@ -68,10 +68,10 @@ runcmd:
   - [sh, -c, 'ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub -E sha256 > /dev/ttyS0']
 EOF
     if [[ "${CWH_E2E_AWS_CONSOLE:-0}" == 1 ]]; then
-      # Emit the whole fingerprint block through cloud-init stdout, in order
-      # with runcmd logs; direct tty writes can interleave with its buffered output.
+      # Build the complete EC2 fingerprint block before one serial-console write;
+      # per-line writes can interleave with concurrent cloud-init logging.
       cat >> "$private_dir/$node-user.yml" <<'EOF'
-  - [sh, -c, 'fingerprints=$(echo "ec2: -----BEGIN SSH HOST KEY FINGERPRINTS-----"; for public_key in /etc/ssh/ssh_host_*_key.pub; do printf "ec2: "; ssh-keygen -lf "$public_key" -E sha256; done; echo "ec2: -----END SSH HOST KEY FINGERPRINTS-----"); printf "%s\n" "$fingerprints"']
+  - [sh, -c, 'fingerprints=$(echo "ec2: -----BEGIN SSH HOST KEY FINGERPRINTS-----"; for public_key in /etc/ssh/ssh_host_*_key.pub; do printf "ec2: "; ssh-keygen -lf "$public_key" -E sha256; done; echo "ec2: -----END SSH HOST KEY FINGERPRINTS-----"); printf "%s\n" "$fingerprints" > /dev/ttyS0']
 EOF
     fi
     cat > "$private_dir/$node-network.yml" <<EOF
