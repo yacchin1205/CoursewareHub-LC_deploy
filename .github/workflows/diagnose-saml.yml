@@ -1,0 +1,43 @@
+name: Diagnose SAML key access
+on:
+  push:
+    branches: ['diagnostic/saml-key-access']
+permissions:
+  contents: read
+jobs:
+  diagnose:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Reproduce signed metadata with the construction key permissions
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p certs logs
+          trap 'docker logs auth > logs/container.log 2>&1 || true' EXIT
+          openssl req -x509 -newkey rsa:2048 -nodes -days 1 -keyout certs/auth-proxy.key -out certs/auth-proxy.cer -subj /CN=coursewarehub.test
+          sudo chown root:root certs/auth-proxy.key
+          sudo chmod 600 certs/auth-proxy.key
+          cp certs/auth-proxy.cer certs/server.cer
+          sudo cp certs/auth-proxy.key certs/server.key
+          docker run -d --name auth --add-host jupyterhub:127.0.0.1 --add-host registry:127.0.0.1 -p 8443:443 -e MASTER_FQDN=coursewarehub.test -e ENABLE_FEDERATION=yes -e ENABLE_TEST_FEDERATION=yes -v "$PWD/certs:/etc/nginx/certs:ro" -v "$PWD/certs:/var/www/simplesamlphp/cert:ro" niicloudoperation/coursewarehub-auth-proxy@sha256:6332ccc3fca6a86deb31e982e2aec9c8f92ddcaada4459279bab8e68f579d335
+          for n in $(seq 1 60); do
+            if curl -ksSf https://127.0.0.1:8443/php/login.php >/dev/null; then break; fi
+            sleep 2
+          done
+          docker exec auth id www-data
+          docker exec -u www-data auth test -r /var/www/simplesamlphp/cert/auth-proxy.key && readable=yes || readable=no
+          echo "Original key readable: $readable"
+          curl -ksS -H 'Host: coursewarehub.test' -w '%{http_code}\n' https://127.0.0.1:8443/simplesaml/module.php/saml/sp/metadata.php/default-sp -o logs/before.html
+          docker exec auth cat /var/www/simplesamlphp/log/simplesamlphp.log > logs/before.log
+          sudo chown "$(docker exec auth id -u www-data)" certs/auth-proxy.key
+          docker exec -u www-data auth test -r /var/www/simplesamlphp/cert/auth-proxy.key
+          curl -ksS -H 'Host: coursewarehub.test' -w '%{http_code}\n' https://127.0.0.1:8443/simplesaml/module.php/saml/sp/metadata.php/default-sp -o logs/after.xml
+          docker exec auth cat /var/www/simplesamlphp/log/simplesamlphp.log > logs/after.log
+          cat logs/before.log
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: saml-key-diagnosis
+          path: logs/
+          retention-days: 1
