@@ -9,6 +9,7 @@ from playwright.sync_api import sync_playwright, expect
 
 def check_operationhub(results, base_url, username, password, aws_parameters):
     from papermill.parameterize import parameterize_notebook
+    from papermill.iorw import load_notebook_node
     import nbformat
 
     results = Path(results)
@@ -67,7 +68,9 @@ def check_operationhub(results, base_url, username, password, aws_parameters):
             name = 'D01_CoursewareHub用VMをAWSに作成.ipynb'
             recipe = fetch(prefix + 'api/contents/' + quote(name))
             assert recipe['type'] == 'notebook', recipe
-            notebook = parameterize_notebook(nbformat.from_dict(recipe['content']), aws_parameters)
+            input_path = results / 'D01-input-from-operationhub.ipynb'
+            input_path.write_text(json.dumps(recipe['content'], ensure_ascii=False, indent=1) + '\n')
+            notebook = parameterize_notebook(load_notebook_node(str(input_path)), aws_parameters)
             fetch(prefix + 'api/contents/' + quote(name), 'PUT',
                   {'type': 'notebook', 'format': 'json', 'content': notebook})
             page.goto(base_url + prefix + 'notebooks/' + quote(name))

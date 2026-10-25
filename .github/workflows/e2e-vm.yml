@@ -8,14 +8,20 @@ on:
       - '.github/actions/setup-coursewarehub-tests/**'
       - '.github/actions/setup-qemu-guests/**'
       - 'tests/e2e/**'
+      - '!tests/e2e/aws-notebook.sh'
+      - '!tests/e2e/aws_guest_provider.py'
+      - '!tests/e2e/operationhub_ui.py'
+      - '!tests/e2e/requirements-aws.txt'
+      - '!tests/e2e/run-aws-notebooks.py'
       - 'coursewarehub/**'
+      - '!coursewarehub/D01_CoursewareHub用VMをAWSに作成.ipynb'
 
 permissions:
   contents: read
 
 concurrency:
   group: vm-notebook-e2e-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   vm:
