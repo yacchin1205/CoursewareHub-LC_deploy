@@ -41,7 +41,6 @@ def check_operationhub(results, base_url, username, password, aws_parameters):
             page.locator('#password_input').fill(password)
             page.locator('#login_submit').click()
             page.wait_for_url(lambda url: '/hub/login' not in str(url), timeout=60000)
-            passed('administrator logged in to the constructed OperationHub')
             page.goto(base_url + '/hub/home')
 
             def fetch(path, method='GET', body=None):
@@ -60,6 +59,7 @@ def check_operationhub(results, base_url, username, password, aws_parameters):
 
             user = fetch('/hub/api/user')
             assert user['name'] == username and user['admin'], user
+            passed('administrator logged in to the constructed OperationHub')
             prefix = '/user/' + quote(username, safe='') + '/'
             page.locator('#start').click()
             page.wait_for_url(lambda url: prefix in str(url), timeout=300000)
@@ -107,6 +107,14 @@ def check_operationhub(results, base_url, username, password, aws_parameters):
             (results / 'runtime-summary.json').write_text(json.dumps({'passed': steps, 'status': 'passed'}, indent=2) + '\n')
             return hosts
         except Exception:
+            try:
+                document = page.evaluate("""() => window.Jupyter && Jupyter.notebook
+                    ? Jupyter.notebook.toJSON() : null""")
+                if document is not None:
+                    (results / 'failure-notebook.ipynb').write_text(
+                        json.dumps(document, ensure_ascii=False, indent=1) + '\n')
+            except Exception:
+                pass
             page.screenshot(path=str(results / 'failure.png'), full_page=True)
             (results / 'failure.html').write_text(page.content())
             raise
