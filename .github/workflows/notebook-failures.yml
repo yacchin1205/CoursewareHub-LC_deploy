@@ -1,0 +1,65 @@
+name: Notebook failure handling
+
+on:
+  push:
+    branches: [feature/e2e-test]
+    paths:
+      - '.github/workflows/notebook-failures.yml'
+      - 'tests/notebooks/**'
+      - 'tests/e2e/node/**'
+      - 'D01_OperationHubをAWSに構築.ipynb'
+      - 'coursewarehub/**'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: notebook-failures-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  notebook:
+    name: Failure handling | ${{ matrix.notebook }}
+    if: github.repository == 'yacchin1205/CoursewareHub-LC_deploy'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        notebook:
+          - operationhub-d01
+          - coursewarehub-aws-d01
+          - coursewarehub-onprem-d01
+          - coursewarehub-d02
+          - coursewarehub-d03
+          - coursewarehub-d04
+          - coursewarehub-d05
+          - coursewarehub-d06
+          - coursewarehub-o01
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: tests/notebooks/requirements.txt
+      - name: Install Notebook execution dependencies
+        run: |
+          python -m pip install -r tests/notebooks/requirements.txt
+          python -m ipykernel install --user --name python3
+      - name: Test invalid input and command failure handling
+        if: matrix.notebook != 'coursewarehub-onprem-d01'
+        run: >-
+          python tests/notebooks/run-failures.py --notebook '${{ matrix.notebook }}'
+          --result-dir 'test-results/notebook-failures/${{ matrix.notebook }}'
+      - name: Test missing inventory and real SSH identity rejection
+        if: matrix.notebook == 'coursewarehub-onprem-d01'
+        run: bash tests/notebooks/onprem-d01-failures.sh
+      - name: Save failed Notebook executions and case results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: notebook-failures-${{ matrix.notebook }}
+          path: test-results/notebook-failures/${{ matrix.notebook }}/
+          if-no-files-found: warn
+          retention-days: 7

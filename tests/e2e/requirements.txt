@@ -1,8 +1,4 @@
-ansible-core==2.19.3
-papermill==2.6.0
-ipykernel==6.30.1
-nbformat==5.10.4
-PyYAML==6.0.3
+-r ../notebooks/requirements.txt
 playwright==1.55.0
 signxml==5.2.0
 lxml==6.0.2

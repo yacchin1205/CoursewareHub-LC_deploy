@@ -1,4 +1,4 @@
-name: OperationHub to CoursewareHub E2E
+name: OperationHub | Build, use and construct CoursewareHub
 
 on:
   push:
@@ -8,6 +8,7 @@ on:
       - '.github/actions/setup-coursewarehub-tests/**'
       - '.github/actions/setup-qemu-guests/**'
       - 'tests/e2e/**'
+      - 'tests/notebooks/requirements.txt'
       - 'D01_OperationHubをAWSに構築.ipynb'
       - 'coursewarehub/**'
       - 'image/**'
