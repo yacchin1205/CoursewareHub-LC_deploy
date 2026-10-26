@@ -1,0 +1,55 @@
+name: LC4RI | Original D01-D02 operation and recovery
+on:
+  push:
+    branches: [feature/e2e-test]
+    paths:
+      - '.github/workflows/lc4ri-notebook-ui.yml'
+      - 'tests/lc4ri/**'
+      - '**.ipynb'
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/lc4ri-notebook-ui.yml'
+      - 'tests/lc4ri/**'
+      - '**.ipynb'
+permissions:
+  contents: read
+concurrency:
+  group: lc4ri-ui-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+jobs:
+  notebook-operation:
+    name: D01-D02 | Human inputs, Freeze, invalid setting and recovery
+    if: github.repository == 'yacchin1205/CoursewareHub-LC_deploy'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Verify clean Notebook originals before execution
+        run: git diff --exit-code HEAD -- '*.ipynb'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: tests/lc4ri/requirements.txt
+      - name: Install browser test dependencies
+        run: |
+          python -m pip install -r tests/lc4ri/requirements.txt
+          python -m playwright install --with-deps chromium
+      - name: Make room for the LC4RI image
+        run: sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc
+      - name: Operate the original notebooks in LC4RI and verify recovery
+        run: bash tests/lc4ri/run.sh
+      - name: Verify that execution did not change tracked Notebook originals
+        if: always()
+        run: git diff --exit-code HEAD -- '*.ipynb'
+      - name: Save working notebooks, LC logs and browser evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lc4ri-original-d01-d02
+          path: test-results/lc4ri/
+          if-no-files-found: warn
+          retention-days: 7
