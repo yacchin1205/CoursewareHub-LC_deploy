@@ -1,0 +1,64 @@
+name: OperationHub | Construct and use through LC4RI
+on:
+  pull_request:
+    branches: [main]
+    paths: ['tests/lc4ri/**', '.github/workflows/lc4ri-operationhub.yml', 'D01_OperationHubをAWSに構築.ipynb', 'image/**', 'coursewarehub/**']
+permissions:
+  contents: read
+concurrency:
+  group: lc4ri-operationhub-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+jobs:
+  operationhub:
+    name: OperationHub | Original AWS construction notebook and running service
+    if: github.repository == 'yacchin1205/CoursewareHub-LC_deploy'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Verify unchanged Notebook originals
+        run: git diff --exit-code HEAD -- '*.ipynb'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: tests/lc4ri/requirements-aws.txt
+      - name: Install browser and VM tools
+        run: |
+          python -m pip install -r tests/lc4ri/requirements-aws.txt
+          python -m playwright install --with-deps chromium
+          sudo apt-get update
+          sudo apt-get install -y qemu-system-x86 qemu-utils cloud-image-utils
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc
+      - name: Read guest image identity
+        id: image
+        run: |
+          source tests/lc4ri/guests/guest-image.env
+          echo "sha=$CWH_E2E_GUEST_IMAGE_SHA256" >> "$GITHUB_OUTPUT"
+          echo "CWH_E2E_IMAGE_CACHE=$RUNNER_TEMP/coursewarehub-cloud-image" >> "$GITHUB_ENV"
+      - uses: actions/cache/restore@v4
+        id: guest-image
+        with:
+          path: ${{ runner.temp }}/coursewarehub-cloud-image
+          key: rocky-cloud-image-${{ steps.image.outputs.sha }}
+      - name: Verify guest image
+        run: bash tests/lc4ri/guests/prepare-guest-image.sh "$CWH_E2E_IMAGE_CACHE"
+      - uses: actions/cache/save@v4
+        if: steps.guest-image.outputs.cache-hit != 'true'
+        with:
+          path: ${{ runner.temp }}/coursewarehub-cloud-image
+          key: rocky-cloud-image-${{ steps.image.outputs.sha }}
+      - name: Construct OperationHub through the LC4RI UI
+        run: bash tests/lc4ri/run-operationhub.sh
+      - name: Verify execution preserved Notebook originals
+        if: always()
+        run: git diff --exit-code HEAD -- '*.ipynb'
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lc4ri-operationhub
+          path: test-results/lc4ri-operationhub/
+          if-no-files-found: warn
+          retention-days: 7
