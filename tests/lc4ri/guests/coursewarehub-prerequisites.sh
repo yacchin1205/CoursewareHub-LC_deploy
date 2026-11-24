@@ -1,6 +1,6 @@
 # Called with the CoursewareHub master first, followed by its workers.
 prepare_coursewarehub_prerequisites() {
-  local master_ip=$1 host hub_base hub_digest
+  local master_ip=$1 host hub_base
   # Nested Docker services must resolve the deployment FQDN through DNS as well.
   cat > "$private_dir/Corefile" <<EOF
 .:53 {
@@ -34,15 +34,29 @@ EOF
     -v "$private_dir/test-ca.crt:/test-ca.crt:ro" -v "$private_dir/test-server.key:/test-server.key:ro" registry:2.8.3
   sudo mkdir -p "/etc/docker/certs.d/$gateway:18504"
   sudo cp "$private_dir/test-ca.crt" "/etc/docker/certs.d/$gateway:18504/ca.crt"
-  hub_base=niicloudoperation/coursewarehub-jupyterhub:master
-  run_with_timeout 15m docker pull "$hub_base"
-  run_with_timeout 60s docker image inspect "$hub_base" --format '{{json .RepoDigests}}' > "$result_dir/hub-base-image.json"
-  hub_digest=$(run_with_timeout 60s docker image inspect "$hub_base" --format '{{index .RepoDigests 0}}')
+  if [[ -n "${LC4RI_PLATFORM_HUB:-}" ]]; then
+    hub_base=$LC4RI_PLATFORM_HUB
+    : "${LC4RI_PLATFORM_AUTH:?Expected the matching platform auth-proxy image}"
+    export LC4RI_AUTH_IMAGE="$gateway:18504/coursewarehub-auth-proxy:platform"
+    docker tag "$LC4RI_PLATFORM_AUTH" "$LC4RI_AUTH_IMAGE"
+    run_with_timeout 10m docker push "$LC4RI_AUTH_IMAGE"
+    docker image inspect "$hub_base" --format '{{.Id}}' > "$result_dir/platform-hub-image-id.txt"
+  else
+    hub_base=niicloudoperation/coursewarehub-jupyterhub:master
+    run_with_timeout 15m docker pull "$hub_base"
+    docker image inspect "$hub_base" --format '{{json .RepoDigests}}' > "$result_dir/hub-base-image.json"
+    hub_base=$(docker image inspect "$hub_base" --format '{{index .RepoDigests 0}}')
+  fi
   mkdir "$private_dir/trusted-hub"
   cp tests/lc4ri/trusted-hub/Dockerfile "$private_dir/trusted-hub/"
   cp "$private_dir/test-ca.crt" "$private_dir/trusted-hub/"
   export LC4RI_HUB_IMAGE="$gateway:18504/coursewarehub-jupyterhub:test-ca"
-  run_with_timeout 20m docker build --build-arg BASE_IMAGE="$hub_digest" -t "$LC4RI_HUB_IMAGE" "$private_dir/trusted-hub"
+  run_with_timeout 20m docker build --build-arg BASE_IMAGE="$hub_base" -t "$LC4RI_HUB_IMAGE" "$private_dir/trusted-hub"
   run_with_timeout 10m docker push "$LC4RI_HUB_IMAGE"
+  if [[ -n "${LC4RI_PLATFORM_HUB:-}" ]]; then
+    export LC4RI_HUB_DIGEST LC4RI_AUTH_DIGEST
+    LC4RI_HUB_DIGEST=$(docker image inspect "$LC4RI_HUB_IMAGE" --format '{{index .RepoDigests 0}}')
+    LC4RI_AUTH_DIGEST=$(docker image inspect "$LC4RI_AUTH_IMAGE" --format '{{index .RepoDigests 0}}')
+  fi
   run_with_timeout 60s docker image inspect "$LC4RI_HUB_IMAGE" --format '{{json .RepoDigests}}' > "$result_dir/hub-trusted-image.json"
 }

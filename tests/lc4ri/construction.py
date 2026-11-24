@@ -72,7 +72,12 @@ def operate_d02(original, args, controls, page, records, results):
         elif index == setting:
             edit(index, text.replace("'10.1.1.162'", repr(args.master)), 'Select the NFS and master hosts')
         elif index == image and args.hub_image is not None:
-            edit(index, re.sub(r"^group_vars\['jupyterhub_image'\] = .+$", "group_vars['jupyterhub_image'] = " + repr(args.hub_image), text, flags=re.M), 'Select the Hub image with the fixture CA')
+            updated = re.sub(r"^group_vars\['jupyterhub_image'\] = .+$", "group_vars['jupyterhub_image'] = " + repr(args.hub_image), text, flags=re.M)
+            if 'LC4RI_AUTH_IMAGE' in os.environ:
+                if find("group_vars['auth_proxy_image'] = ") != index:
+                    raise ValueError('D02: expected both platform image settings in the same input cell')
+                updated = re.sub(r"^group_vars\['auth_proxy_image'\] = .+$", "group_vars['auth_proxy_image'] = " + repr(os.environ['LC4RI_AUTH_IMAGE']), updated, flags=re.M)
+            edit(index, updated, 'Select the images for this deployment')
         elif index == hostname:
             edit(index, text.replace("'example.com'", "'coursewarehub.test'"), 'Set the service hostname')
         elif index in federation:
@@ -251,6 +256,19 @@ def operate_o01(original, args, controls, page, records, results):
             continue
         inputs = deployment_inputs(index, text, controls, cells)
         check_output('O01', index, text, controls.run(index, inputs=inputs))
+
+
+def verify_platform_images(master, results):
+    if 'LC4RI_PLATFORM_HUB' not in os.environ:
+        return
+    images = {}
+    for service, expected in [('jupyterhub', os.environ['LC4RI_HUB_DIGEST']),
+                              ('auth-proxy', os.environ['LC4RI_AUTH_DIGEST'])]:
+        actual = remote(master, "docker service inspect --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' coursewarehub_" + service)
+        images[service] = actual
+        assert '@' in actual and actual.split('@')[1] == expected.split('@')[1], (service, expected, actual)
+    results.mkdir(parents=True, exist_ok=True)
+    (results / 'platform-services.json').write_text(json.dumps(images, indent=2))
 
 
 def verify_inventory(args, results, api):
