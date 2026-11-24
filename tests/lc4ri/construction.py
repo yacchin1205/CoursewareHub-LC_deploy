@@ -119,8 +119,12 @@ def operate_d04(original, args, controls, page, records, results):
     (results / 'deployment-dns.txt').write_text(dns)
 
 
+HUB_CONFIG_VOLUME = '    - read_only: true\n      source: /etc/jupyterhub/jupyterhub_config.d\n'
+
+
 def deployment_cells(controls):
     return dict(certificate=controls.find('use_saml_cert_as_server_cert = False'),
+                compose=controls.find(HUB_CONFIG_VOLUME),
                 removal=controls.find('docker stack rm coursewarehub'),
                 password=controls.find('db_pass = getpass()'),
                 acme=controls.find("acme_server = input('ACME Server URL')\n"
@@ -131,6 +135,16 @@ def deployment_cells(controls):
 
 
 def deployment_inputs(index, text, controls, cells):
+    if index == cells['compose']:
+        if text.count(HUB_CONFIG_VOLUME) != 1:
+            raise ValueError('Expected one JupyterHub config mount in the Compose template')
+        ca_volume = '''    - read_only: true
+      source: /home/centos/certs/hub-ca-bundle.pem
+      target: /etc/ssl/certs/ca-certificates.crt
+      type: bind
+'''
+        controls.edit(index, text.replace(HUB_CONFIG_VOLUME, ca_volume + HUB_CONFIG_VOLUME),
+                      'Mount the test CA bundle for JupyterHub registry access')
     if index == cells['certificate']:
         controls.edit(index, text.replace('use_saml_cert_as_server_cert = False', 'use_saml_cert_as_server_cert = True'), 'Use the locally provisioned test certificate')
     if index == cells['removal']:

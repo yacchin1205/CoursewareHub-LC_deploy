@@ -24,7 +24,6 @@ EOF
     cat "$private_dir/test-ca.crt" | run_with_timeout 60s ssh -F "$private_dir/ssh_config" "centos@$host" 'sudo tee /etc/pki/ca-trust/source/anchors/coursewarehub-test.crt >/dev/null; sudo update-ca-trust'
   done
   printf '%s coursewarehub.test\n' "$master_ip" | sudo tee -a /etc/hosts
-  # The test CA must be trusted before the Hub's TLS clients are imported.
   run_with_timeout 60s ssh -F "$private_dir/ssh_config" "centos@$master_ip" 'cat ~/certs/coursewarehub.test.key' > "$private_dir/test-server.key"
   chmod 0600 "$private_dir/test-server.key"
   cp "$private_dir/test-ca.crt" "$result_dir/test-ca.crt"
@@ -38,11 +37,12 @@ EOF
   run_with_timeout 15m docker pull "$hub_base"
   run_with_timeout 60s docker image inspect "$hub_base" --format '{{json .RepoDigests}}' > "$result_dir/hub-base-image.json"
   hub_digest=$(run_with_timeout 60s docker image inspect "$hub_base" --format '{{index .RepoDigests 0}}')
-  mkdir "$private_dir/trusted-hub"
-  cp tests/lc4ri/trusted-hub/Dockerfile "$private_dir/trusted-hub/"
-  cp "$private_dir/test-ca.crt" "$private_dir/trusted-hub/"
-  export LC4RI_HUB_IMAGE="$gateway:18504/coursewarehub-jupyterhub:test-ca"
-  run_with_timeout 20m docker build --build-arg BASE_IMAGE="$hub_digest" -t "$LC4RI_HUB_IMAGE" "$private_dir/trusted-hub"
+  # Keep the Hub image's public roots alongside the CA for the fixture registry.
+  run_with_timeout 60s docker run --rm --entrypoint cat "$hub_digest" /etc/ssl/certs/ca-certificates.crt > "$private_dir/hub-ca-bundle.pem"
+  cat "$private_dir/test-ca.crt" >> "$private_dir/hub-ca-bundle.pem"
+  run_with_timeout 60s ssh -F "$private_dir/ssh_config" "centos@$master_ip" 'install -m 0644 /dev/stdin ~/certs/hub-ca-bundle.pem' < "$private_dir/hub-ca-bundle.pem"
+  export LC4RI_HUB_IMAGE="$gateway:18504/coursewarehub-jupyterhub:platform"
+  docker tag "$hub_digest" "$LC4RI_HUB_IMAGE"
   run_with_timeout 10m docker push "$LC4RI_HUB_IMAGE"
-  run_with_timeout 60s docker image inspect "$LC4RI_HUB_IMAGE" --format '{{json .RepoDigests}}' > "$result_dir/hub-trusted-image.json"
+  run_with_timeout 60s docker image inspect "$LC4RI_HUB_IMAGE" --format '{{json .RepoDigests}}' > "$result_dir/hub-image.json"
 }
