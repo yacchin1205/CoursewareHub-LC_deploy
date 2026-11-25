@@ -31,8 +31,8 @@ jobs:
           - authentication: federation
             scenario: SAML federation
     env:
-      LC4RI_JUPYTERHUB_DEPLOY: ${{ inputs.jupyterhub_deploy }}
-      LC4RI_MANAGE_TOOLS: ${{ inputs.manage_tools }}
+      LC4RI_JUPYTERHUB_DEPLOY: NII-cloud-operation/CoursewareHub-LC_jupyterhub-deploy@refs/pull/7/head
+      LC4RI_MANAGE_TOOLS: shingo78/CoursewareHub-LC_manage-tools@feature/multi-course-server
       LC4RI_AUTHENTICATION: ${{ matrix.authentication }}
     runs-on: ubuntu-24.04
     timeout-minutes: 120
