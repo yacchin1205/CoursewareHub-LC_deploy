@@ -5,6 +5,7 @@ import re
 import shlex
 import subprocess
 
+from clone_revision import pin_clone
 from notebook_controls import source
 
 
@@ -89,6 +90,10 @@ def operate_d02(original, args, controls, page, records, results):
 
 
 def operate_d03(original, args, controls, page, records, results):
+    if args.jupyterhub_deploy:
+        pin_clone(controls, original, args.jupyterhub_deploy,
+                  'https://github.com/NII-cloud-operation/CoursewareHub-LC_jupyterhub-deploy.git',
+                  '{work_dir}/jupyterhub-deploy')
     before = {host: remote(host, 'cat /proc/sys/kernel/random/boot_id') for host in (args.master, *args.workers)}
     for index, text in inventory_cells(original, controls, args.group):
         check_output('D03', index, text, controls.run(index))
@@ -195,6 +200,10 @@ def inspect_simplesaml_log(notebook, index, controls, master, records):
 
 
 def operate_d05(original, args, controls, page, records, results):
+    if args.jupyterhub_deploy:
+        pin_clone(controls, original, args.jupyterhub_deploy,
+                  'https://github.com/NII-cloud-operation/CoursewareHub-LC_jupyterhub-deploy.git',
+                  '{work_dir}/jupyterhub-deploy')
     find = controls.find
     cells = deployment_cells(controls)
     subnet = find('###### ipam_config = ')

@@ -10,6 +10,7 @@ from urllib.parse import quote
 
 from playwright.sync_api import expect
 
+from clone_revision import pin_clone
 from construction import remote
 from browser_evidence import BrowserRecording
 
@@ -158,12 +159,21 @@ class AdminNotebookSession:
         from notebook_controls import operations
         d06_records=[]
         controls=operations(self.page,'D06',canonical,d06_records,timeout=300000)
+        if self.args.manage_tools:
+            url, _ = self.args.manage_tools
+            setting = "REPOS_URL='https://github.com/NII-cloud-operation/CoursewareHub-LC_manage-tools.git'"
+            index = controls.find(setting)
+            if url != 'https://github.com/NII-cloud-operation/CoursewareHub-LC_manage-tools.git':
+                controls.edit(index, original[index]['text'].replace(setting, 'REPOS_URL=' + repr(url)),
+                              'Select the course management tools repository')
+            pin_clone(controls, canonical, self.args.manage_tools, '{REPOS_URL}', '{work_dir}/{repo_name}')
         for index,cell in enumerate(original):
             if cell['type']!='code' or not cell['text'].strip():continue
             observed=controls.run(index)
             if '-CD' not in cell['text']:
                 assert not any('FAILED!' in str(o) or 'UNREACHABLE!' in str(o) for o in observed['outputs']),observed['outputs']
-        assert self.page.evaluate('()=>Jupyter.notebook.get_cells().slice(0,'+str(len(original))+').map(c=>({type:c.cell_type,text:c.get_text()}))')==original
+        expected = [dict(cell, text=controls.edits.get(i, cell['text'])) for i, cell in enumerate(original)]
+        assert self.page.evaluate('()=>Jupyter.notebook.get_cells().slice(0,'+str(len(original))+').map(c=>({type:c.cell_type,text:c.get_text()}))')==expected
         (self.results/'D06-operations.json').write_text(json.dumps(d06_records,indent=2)+'\n')
         self.page.keyboard.press('Control+s')
         self.page.wait_for_function('!Jupyter.notebook.dirty')

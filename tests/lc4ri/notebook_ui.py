@@ -11,6 +11,7 @@ from urllib.parse import quote
 import urllib.request
 from urllib.error import URLError
 
+from clone_revision import resolve_revision
 from browser_evidence import BrowserRecording
 from notebook_controls import source
 from lab_controls import BASE, operations, open_working_copy
@@ -39,6 +40,9 @@ def main():
     args.workers = [args.worker]
     args.test_moodle = not args.operationhub and args.authentication == 'local'
     args.saml = None
+    if not args.operationhub:
+        args.jupyterhub_deploy = resolve_revision('LC4RI_JUPYTERHUB_DEPLOY')
+        args.manage_tools = resolve_revision('LC4RI_MANAGE_TOOLS')
     if not args.operationhub and args.authentication == 'federation':
         from saml_provider import running_provider
         args.saml = args.fixtures.enter_context(running_provider('http://' + os.environ['LC4RI_GATEWAY'] + ':18501', 'https://coursewarehub.test', 'ciadmin@example.test'))
