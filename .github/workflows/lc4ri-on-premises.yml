@@ -33,6 +33,9 @@ jobs:
     env:
       LC4RI_JUPYTERHUB_DEPLOY: NII-cloud-operation/CoursewareHub-LC_jupyterhub-deploy@refs/pull/7/head
       LC4RI_MANAGE_TOOLS: shingo78/CoursewareHub-LC_manage-tools@feature/multi-course-server
+      LC4RI_PLATFORM_HUB: niicloudoperation/coursewarehub-jupyterhub:master
+      LC4RI_PLATFORM_AUTH: niicloudoperation/coursewarehub-auth-proxy:master
+      LC4RI_PLATFORM_SCHEMA_URL: https://raw.githubusercontent.com/NII-cloud-operation/CoursewareHub-LC_platform/88f67d9035b39851744ac78affd7eed0b2c649aa/jupyterhub/resources-schema.json
       LC4RI_AUTHENTICATION: ${{ matrix.authentication }}
     runs-on: ubuntu-24.04
     timeout-minutes: 120
@@ -73,6 +76,10 @@ jobs:
         with:
           path: ${{ runner.temp }}/coursewarehub-cloud-image
           key: rocky-cloud-image-${{ steps.image.outputs.sha }}
+      - name: Supply published platform images for the fork trial
+        run: |
+          docker pull "$LC4RI_PLATFORM_HUB"
+          docker pull "$LC4RI_PLATFORM_AUTH"
       - name: Construct CoursewareHub through the LC4RI UI
         run: bash tests/lc4ri/run-construction.sh
       - name: Verify execution preserved Notebook originals
